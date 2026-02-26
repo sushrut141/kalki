@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package kalki;
+
+import "google/protobuf/timestamp.proto";
+
+message StoreLogRequest {
+  string agent_id = 1;
+  string session_id = 2;
+  string conversation_log = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+message StoreLogResponse {
+  enum Status {
+    STATUS_OK = 0;
+    STATUS_INVALID_ARGUMENT = 1;
+    STATUS_INTERNAL_ERROR = 2;
+  }
+  Status status = 1;
+  string error_message = 2;
+}
+
+message QueryRequest {
+  string caller_agent_id = 1;
+  string query = 2;
+  optional string session_id = 3;
+  optional string agent_id = 4;
+  optional google.protobuf.Timestamp start_time = 5;
+  optional google.protobuf.Timestamp end_time = 6;
+}
+
+message AgentLogResult {
+  string agent_id = 1;
+  string session_id = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  string raw_conversation_log = 4;
+}
+
+message QueryResponse {
+  enum Status {
+    STATUS_COMPLETE = 0;
+    STATUS_INCOMPLETE = 1;
+    STATUS_INTERNAL_ERROR = 2;
+  }
+  Status status = 1;
+  repeated AgentLogResult records = 2;
+  string error_message = 3;
+}
+
+service AgentLogService {
+  rpc StoreLog(StoreLogRequest) returns (StoreLogResponse);
+  rpc QueryLogs(QueryRequest) returns (QueryResponse);
+}
+
+message WalRecord {
+  string agent_id = 1;
+  string session_id = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  string conversation_log = 4;
+}
+
+message ProcessedRecord {
+  string agent_id = 1;
+  string session_id = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  string raw_conversation_log = 4;
+  string summary = 5;
+}
+
+message BakedHeaderEntry {
+  int64 timestamp_unix_micros = 1;
+  string agent_id = 2;
+  string session_id = 3;
+  string summary = 4;
+  uint64 data_offset = 5;
+  uint32 data_size = 6;
+}
+
+message BakedHeader {
+  int64 min_timestamp_unix_micros = 1;
+  int64 max_timestamp_unix_micros = 2;
+  repeated BakedHeaderEntry entries = 3;
+}
