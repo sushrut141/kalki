@@ -74,6 +74,9 @@ absl::Status BakedBlockWriter::Write(const std::string& path, std::vector<Proces
     entry->set_summary(rec.summary());
     entry->set_data_offset(running_offset);
     entry->set_data_size(static_cast<uint32_t>(compressed_or->size()));
+    for (float v : rec.summary_embedding()) {
+      entry->add_summary_embedding(v);
+    }
 
     running_offset += static_cast<uint64_t>(compressed_or->size());
     compressed_records.push_back(std::move(*compressed_or));

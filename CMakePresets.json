@@ -1,0 +1,46 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "intellij-debug",
+      "displayName": "IntelliJ Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/cmake-build-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "KALKI_BUILD_TESTS": "ON",
+        "KALKI_ENABLE_ZSTD": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew;/usr/local"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "intellij-debug-build",
+      "configurePreset": "intellij-debug"
+    },
+    {
+      "name": "intellij-debug-build-tests",
+      "configurePreset": "intellij-debug",
+      "targets": [
+        "kalki_gemini_client_test",
+        "kalki_database_e2e_test"
+      ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "intellij-debug-test",
+      "configurePreset": "intellij-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

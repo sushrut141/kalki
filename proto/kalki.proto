@@ -66,6 +66,7 @@ message ProcessedRecord {
   google.protobuf.Timestamp timestamp = 3;
   string raw_conversation_log = 4;
   string summary = 5;
+  repeated float summary_embedding = 6;
 }
 
 message BakedHeaderEntry {
@@ -75,6 +76,7 @@ message BakedHeaderEntry {
   string summary = 4;
   uint64 data_offset = 5;
   uint32 data_size = 6;
+  repeated float summary_embedding = 7;
 }
 
 message BakedHeader {

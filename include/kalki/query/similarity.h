@@ -9,15 +9,11 @@ namespace kalki {
 
 class SimilarityEngine {
  public:
-  explicit SimilarityEngine(int dimensions = 128);
+  SimilarityEngine() = default;
 
-  absl::StatusOr<std::vector<float>> ScoreSummaries(
-      const std::string& query, const std::vector<std::string>& summaries) const;
-
- private:
-  std::vector<float> Embed(const std::string& text) const;
-
-  int dimensions_;
+  absl::StatusOr<std::vector<float>> ScoreEmbeddings(
+      const std::vector<float>& query_embedding,
+      const std::vector<std::vector<float>>& summary_embeddings) const;
 };
 
 }  // namespace kalki

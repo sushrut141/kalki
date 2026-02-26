@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <iterator>
 #include <limits>
 #include <optional>
 #include <string>
@@ -63,14 +62,15 @@ bool MatchesProcessedRecordFilter(const ProcessedRecord& record, const QueryFilt
 }  // namespace
 
 QueryCoordinator::QueryCoordinator(const DatabaseConfig& config, MetadataStore* metadata_store,
-                                   ThreadPool* thread_pool)
+                                   EmbeddingClient* embedding_client, ThreadPool* thread_pool)
     : config_(config),
       metadata_store_(metadata_store),
+      embedding_client_(embedding_client),
       thread_pool_(thread_pool),
-      similarity_engine_(128) {}
+      similarity_engine_() {}
 
 absl::StatusOr<std::vector<QueryRecord>> QueryCoordinator::ProcessBlockGroup(
-    const std::string& query, const QueryFilter& filter,
+    const std::vector<float>& query_embedding, const QueryFilter& filter,
     const std::vector<BlockMetadata>& group) const {
   std::vector<QueryRecord> output;
 
@@ -85,22 +85,34 @@ absl::StatusOr<std::vector<QueryRecord>> QueryCoordinator::ProcessBlockGroup(
         continue;
       }
 
-      std::vector<std::string> summaries;
-      summaries.reserve(records_or->size());
-      for (const ProcessedRecord& record : *records_or) {
-        summaries.push_back(record.summary());
+      std::vector<std::vector<float>> embeddings;
+      std::vector<size_t> embedding_to_record_index;
+      embeddings.reserve(records_or->size());
+      embedding_to_record_index.reserve(records_or->size());
+      for (size_t i = 0; i < records_or->size(); ++i) {
+        const ProcessedRecord& record = (*records_or)[i];
+        if (record.summary_embedding_size() == 0) {
+          continue;
+        }
+        std::vector<float> embedding;
+        embedding.reserve(static_cast<size_t>(record.summary_embedding_size()));
+        for (float v : record.summary_embedding()) {
+          embedding.push_back(v);
+        }
+        embeddings.push_back(std::move(embedding));
+        embedding_to_record_index.push_back(i);
       }
 
-      auto scores_or = similarity_engine_.ScoreSummaries(query, summaries);
+      auto scores_or = similarity_engine_.ScoreEmbeddings(query_embedding, embeddings);
       if (!scores_or.ok()) {
         return scores_or.status();
       }
 
-      for (size_t i = 0; i < records_or->size(); ++i) {
-        const ProcessedRecord& record = (*records_or)[i];
+      for (size_t i = 0; i < scores_or->size(); ++i) {
         if ((*scores_or)[i] < config_.similarity_threshold) {
           continue;
         }
+        const ProcessedRecord& record = (*records_or)[embedding_to_record_index[i]];
         if (!MatchesProcessedRecordFilter(record, filter)) {
           continue;
         }
@@ -136,20 +148,32 @@ absl::StatusOr<std::vector<QueryRecord>> QueryCoordinator::ProcessBlockGroup(
       continue;
     }
 
-    std::vector<std::string> summaries;
-    summaries.reserve(static_cast<size_t>(header_or->entries_size()));
-    std::transform(header_or->entries().begin(), header_or->entries().end(),
-                   std::back_inserter(summaries),
-                   [](const BakedHeaderEntry& entry) { return entry.summary(); });
+    std::vector<std::vector<float>> embeddings;
+    std::vector<int> embedding_to_entry_index;
+    embeddings.reserve(static_cast<size_t>(header_or->entries_size()));
+    embedding_to_entry_index.reserve(static_cast<size_t>(header_or->entries_size()));
+    for (int i = 0; i < header_or->entries_size(); ++i) {
+      const BakedHeaderEntry& entry = header_or->entries(i);
+      if (entry.summary_embedding_size() == 0) {
+        continue;
+      }
+      std::vector<float> embedding;
+      embedding.reserve(static_cast<size_t>(entry.summary_embedding_size()));
+      for (float v : entry.summary_embedding()) {
+        embedding.push_back(v);
+      }
+      embeddings.push_back(std::move(embedding));
+      embedding_to_entry_index.push_back(i);
+    }
 
-    auto scores_or = similarity_engine_.ScoreSummaries(query, summaries);
+    auto scores_or = similarity_engine_.ScoreEmbeddings(query_embedding, embeddings);
     if (!scores_or.ok()) {
       return scores_or.status();
     }
 
-    for (int i = 0; i < header_or->entries_size(); ++i) {
-      const BakedHeaderEntry& entry = header_or->entries(i);
-      const float score = (*scores_or)[static_cast<size_t>(i)];
+    for (size_t i = 0; i < scores_or->size(); ++i) {
+      const BakedHeaderEntry& entry = header_or->entries(embedding_to_entry_index[i]);
+      const float score = (*scores_or)[i];
       const int64_t ts_micros = entry.timestamp_unix_micros();
 
       if (score < config_.similarity_threshold) {
@@ -181,6 +205,11 @@ absl::StatusOr<std::vector<QueryRecord>> QueryCoordinator::ProcessBlockGroup(
 
 absl::StatusOr<QueryExecutionResult> QueryCoordinator::Query(const std::string& query,
                                                              const QueryFilter& filter) {
+  auto query_embedding_or = embedding_client_->EmbedText(query);
+  if (!query_embedding_or.ok()) {
+    return query_embedding_or.status();
+  }
+
   auto baked_candidates_or = metadata_store_->FindCandidateBakedBlocks(filter);
   if (!baked_candidates_or.ok()) {
     return baked_candidates_or.status();
@@ -220,7 +249,7 @@ absl::StatusOr<QueryExecutionResult> QueryCoordinator::Query(const std::string& 
     pending.fetch_add(1, std::memory_order_relaxed);
 
     auto submit_status = thread_pool_->Submit([&, group]() {
-      auto group_or = ProcessBlockGroup(query, filter, group);
+      auto group_or = ProcessBlockGroup(*query_embedding_or, filter, group);
       if (!group_or.ok()) {
         failed_groups.fetch_add(1, std::memory_order_relaxed);
       } else {

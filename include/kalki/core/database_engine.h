@@ -18,6 +18,7 @@ namespace kalki {
 class WalStore;
 class MetadataStore;
 class LlmClient;
+class EmbeddingClient;
 class IngestionWorker;
 class CompactionWorker;
 class QueryCoordinator;
@@ -26,6 +27,8 @@ class DatabaseEngine {
  public:
   explicit DatabaseEngine(DatabaseConfig config);
   DatabaseEngine(DatabaseConfig config, std::unique_ptr<LlmClient> llm_client);
+  DatabaseEngine(DatabaseConfig config, std::unique_ptr<LlmClient> llm_client,
+                 std::unique_ptr<EmbeddingClient> embedding_client);
   ~DatabaseEngine();
 
   absl::Status Initialize();
@@ -50,6 +53,7 @@ class DatabaseEngine {
   std::unique_ptr<WalStore> wal_store_;
   std::unique_ptr<MetadataStore> metadata_store_;
   std::unique_ptr<LlmClient> llm_client_;
+  std::unique_ptr<EmbeddingClient> embedding_client_;
   std::unique_ptr<IngestionWorker> ingestion_worker_;
   std::unique_ptr<CompactionWorker> compaction_worker_;
   std::unique_ptr<QueryCoordinator> query_coordinator_;

@@ -10,7 +10,9 @@
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
 #include "kalki.pb.h"
+#include "kalki/llm/embedding_client.h"
 #include "kalki/llm/gemini_client.h"
+#include "kalki/llm/local_embedding_client.h"
 #include "kalki/metadata/metadata_store.h"
 #include "kalki/query/query_coordinator.h"
 #include "kalki/storage/wal.h"
@@ -39,6 +41,13 @@ DatabaseEngine::DatabaseEngine(DatabaseConfig config, std::unique_ptr<LlmClient>
       query_thread_pool_(config_.query_worker_threads),
       llm_client_(std::move(llm_client)) {}
 
+DatabaseEngine::DatabaseEngine(DatabaseConfig config, std::unique_ptr<LlmClient> llm_client,
+                               std::unique_ptr<EmbeddingClient> embedding_client)
+    : config_(std::move(config)),
+      query_thread_pool_(config_.query_worker_threads),
+      llm_client_(std::move(llm_client)),
+      embedding_client_(std::move(embedding_client)) {}
+
 DatabaseEngine::~DatabaseEngine() { Shutdown(); }
 
 absl::Status DatabaseEngine::Initialize() {
@@ -51,6 +60,10 @@ absl::Status DatabaseEngine::Initialize() {
   if (!llm_client_) {
     llm_client_ = std::make_unique<GeminiLlmClient>(config_.llm_api_key, config_.llm_model);
   }
+  if (!embedding_client_) {
+    embedding_client_ = std::make_unique<LocalEmbeddingClient>(config_.embedding_model_path,
+                                                               config_.embedding_threads);
+  }
 
   if (auto st = wal_store_->Initialize(); !st.ok()) {
     return st;
@@ -61,13 +74,17 @@ absl::Status DatabaseEngine::Initialize() {
   if (auto st = query_thread_pool_.Start(); !st.ok()) {
     return st;
   }
+  if (auto st = embedding_client_->Initialize(); !st.ok()) {
+    return st;
+  }
 
   ingestion_worker_ = std::make_unique<IngestionWorker>(
-      config_, wal_store_.get(), metadata_store_.get(), llm_client_.get(), &compaction_queue_);
+      config_, wal_store_.get(), metadata_store_.get(), llm_client_.get(), embedding_client_.get(),
+      &compaction_queue_);
   compaction_worker_ =
       std::make_unique<CompactionWorker>(config_, metadata_store_.get(), &compaction_queue_);
-  query_coordinator_ =
-      std::make_unique<QueryCoordinator>(config_, metadata_store_.get(), &query_thread_pool_);
+  query_coordinator_ = std::make_unique<QueryCoordinator>(
+      config_, metadata_store_.get(), embedding_client_.get(), &query_thread_pool_);
 
   stop_.store(false, std::memory_order_relaxed);
   ingestion_thread_ = std::thread([this]() { IngestionLoop(); });

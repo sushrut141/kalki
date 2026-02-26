@@ -17,6 +17,8 @@ struct DatabaseConfig {
 
   std::string llm_api_key;
   std::string llm_model;
+  std::string embedding_model_path;
+  int embedding_threads = 2;
 
   int max_records_per_fresh_block = 2000;
   int wal_read_batch_size = 200;

@@ -13,6 +13,9 @@ ABSL_FLAG(std::string, baked_block_dir, "./data/blocks/baked", "Baked block dire
 ABSL_FLAG(std::string, grpc_listen_address, "0.0.0.0:8080", "gRPC listen address");
 ABSL_FLAG(std::string, llm_api_key, "", "LLM API key");
 ABSL_FLAG(std::string, llm_model, "gemini-1.5-flash", "Gemini model name");
+ABSL_FLAG(std::string, embedding_model_path, "./third_party/models/all-minilm-v2.gguf",
+          "Local all-minilm:v2 GGUF model file path used for in-process embeddings");
+ABSL_FLAG(int, embedding_threads, 2, "Number of CPU threads for local embedding inference");
 ABSL_FLAG(int, max_records_per_fresh_block, 2000, "Max records per fresh block");
 ABSL_FLAG(int, wal_read_batch_size, 200, "WAL read batch size");
 ABSL_FLAG(int, query_worker_threads, 8, "Worker thread count for query execution");
@@ -36,6 +39,8 @@ DatabaseConfig LoadConfigFromFlags() {
 
   cfg.llm_api_key = absl::GetFlag(FLAGS_llm_api_key);
   cfg.llm_model = absl::GetFlag(FLAGS_llm_model);
+  cfg.embedding_model_path = absl::GetFlag(FLAGS_embedding_model_path);
+  cfg.embedding_threads = absl::GetFlag(FLAGS_embedding_threads);
 
   cfg.max_records_per_fresh_block = absl::GetFlag(FLAGS_max_records_per_fresh_block);
   cfg.wal_read_batch_size = absl::GetFlag(FLAGS_wal_read_batch_size);

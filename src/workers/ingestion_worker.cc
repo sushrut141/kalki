@@ -22,11 +22,13 @@ int64_t ToMicros(const google::protobuf::Timestamp& ts) {
 
 IngestionWorker::IngestionWorker(const DatabaseConfig& config, WalStore* wal_store,
                                  MetadataStore* metadata_store, LlmClient* llm_client,
+                                 EmbeddingClient* embedding_client,
                                  TaskQueue<CompactionTask>* compaction_queue)
     : config_(config),
       wal_store_(wal_store),
       metadata_store_(metadata_store),
       llm_client_(llm_client),
+      embedding_client_(embedding_client),
       compaction_queue_(compaction_queue) {}
 
 absl::Status IngestionWorker::EnsureActiveFreshBlock() {
@@ -146,6 +148,13 @@ absl::Status IngestionWorker::RunOnce() {
       *processed.mutable_timestamp() = wal_record.timestamp();
       processed.set_raw_conversation_log(wal_record.conversation_log());
       processed.set_summary(summary);
+      auto embedding_or = embedding_client_->EmbedText(summary);
+      if (!embedding_or.ok()) {
+        return embedding_or.status();
+      }
+      for (float v : *embedding_or) {
+        processed.add_summary_embedding(v);
+      }
 
       status = active_writer_.Append(processed);
       if (!status.ok()) {

@@ -44,6 +44,12 @@ cmake --build build -j8
 
 FAISS is a required dependency.
 
+## Run Tests
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
 ## Dependencies
 
 Kalki requires:
@@ -57,13 +63,15 @@ Kalki requires:
 - libcurl
 - zstd (optional compression, enabled if found)
 - FAISS (required)
+- llama.cpp (required for local embedding inference)
 - GoogleTest (for tests)
+- local embedding model file (required for similarity queries)
 
 ### macOS (Homebrew)
 
 ```bash
 brew update
-brew install cmake pkg-config abseil protobuf grpc sqlite zstd curl faiss googletest
+brew install cmake pkg-config abseil protobuf grpc sqlite zstd curl faiss googletest llama.cpp
 ```
 
 If CMake cannot find FAISS config, set:
@@ -95,6 +103,15 @@ sudo apt-get install -y libfaiss-dev
 If your distro release does not provide `libfaiss-dev`, build/install FAISS from source and pass
 `-DCMAKE_PREFIX_PATH` (or `-DFaiss_DIR=...`) to CMake.
 
+Install llama.cpp if your distro does not package it:
+
+```bash
+git clone https://github.com/ggml-org/llama.cpp.git
+cmake -S llama.cpp -B llama.cpp/build -DBUILD_SHARED_LIBS=ON
+cmake --build llama.cpp/build -j8
+cmake --install llama.cpp/build --prefix /usr/local
+```
+
 #### Fedora/RHEL (dnf)
 
 ```bash
@@ -113,6 +130,32 @@ sudo dnf install -y faiss-devel
 
 If `faiss-devel` is unavailable, install FAISS from source and point CMake at it with
 `-DCMAKE_PREFIX_PATH` or `-DFaiss_DIR`.
+
+Install llama.cpp from source if no distro package is available (same steps as Ubuntu/Debian above).
+
+### Local Embedding Model
+
+Kalki stores summary embeddings once at ingestion/compaction time and reuses them for queries.
+Only the incoming query is embedded at query time.
+
+Recommended small local model:
+
+- `all-minilm:v2` as GGUF (`all-minilm-v2.gguf`), loaded directly in-memory by Kalki
+  through `llama.cpp`.
+
+Setup:
+
+```bash
+mkdir -p third_party/models
+curl -L \
+  "https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q4_K_M.gguf" \
+  -o third_party/models/all-minilm-v2.gguf
+```
+
+Default config in Kalki:
+
+- `--embedding_model_path=./third_party/models/all-minilm-v2.gguf`
+- `--embedding_threads=2`
 
 ## Run
 
