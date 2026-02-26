@@ -1,6 +1,5 @@
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -55,7 +54,6 @@ kalki::DatabaseConfig BuildTestConfig(const std::string& base_dir) {
   cfg.grpc_listen_address = "127.0.0.1:0";
   cfg.llm_api_key = "unused";
   cfg.llm_model = "unused";
-
   cfg.max_records_per_fresh_block = 1;
   cfg.wal_read_batch_size = 100;
   cfg.query_worker_threads = 2;
@@ -67,99 +65,270 @@ kalki::DatabaseConfig BuildTestConfig(const std::string& base_dir) {
   return cfg;
 }
 
-std::optional<kalki::QueryExecutionResult> WaitForQueryRecords(kalki::DatabaseEngine* engine,
-                                                               size_t expected) {
+TEST(DatabaseE2ETest, DatabaseIsInitialized) {
+  const std::string base_dir = CreateTempDir();
+  const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
+  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
+                               std::make_unique<FakeEmbeddingClient>());
+
+  const auto init_status = engine.Initialize();
+
+  EXPECT_TRUE(init_status.ok());
+  EXPECT_TRUE(std::filesystem::exists(config.data_dir));
+  EXPECT_TRUE(std::filesystem::exists(config.fresh_block_dir));
+  EXPECT_TRUE(std::filesystem::exists(config.baked_block_dir));
+
+  engine.Shutdown();
+  std::error_code ec;
+  std::filesystem::remove_all(base_dir, ec);
+}
+
+TEST(DatabaseE2ETest, StoreLogSucceeds) {
+  const std::string base_dir = CreateTempDir();
+  const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
+  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
+                               std::make_unique<FakeEmbeddingClient>());
+  const auto init_status = engine.Initialize();
+  const absl::Time now = absl::Now();
+
+  const auto add1 = engine.AppendConversation("agent_a", "session_1", "conversation one", now);
+  const auto add2 =
+      engine.AppendConversation("agent_b", "session_2", "conversation two", now + absl::Seconds(1));
+  const auto add3 = engine.AppendConversation("agent_c", "session_3", "conversation three",
+                                              now + absl::Seconds(2));
+
+  EXPECT_TRUE(init_status.ok());
+  EXPECT_TRUE(add1.ok());
+  EXPECT_TRUE(add2.ok());
+  EXPECT_TRUE(add3.ok());
+
+  engine.Shutdown();
+  std::error_code ec;
+  std::filesystem::remove_all(base_dir, ec);
+}
+
+TEST(DatabaseE2ETest, QueryLogSucceeds) {
+  const std::string base_dir = CreateTempDir();
+  const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
+  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
+                               std::make_unique<FakeEmbeddingClient>());
+  const auto init_status = engine.Initialize();
+  EXPECT_TRUE(init_status.ok());
+  const absl::Time now = absl::Now();
+  const auto add1 = engine.AppendConversation("agent_a", "session_1", "conversation one", now);
+  const auto add2 =
+      engine.AppendConversation("agent_b", "session_2", "conversation two", now + absl::Seconds(1));
+  const auto add3 = engine.AppendConversation("agent_c", "session_3", "conversation three",
+                                              now + absl::Seconds(2));
+  EXPECT_TRUE(add1.ok());
+  EXPECT_TRUE(add2.ok());
+  EXPECT_TRUE(add3.ok());
+  kalki::QueryExecutionResult query_result;
+  bool found = false;
+
   const absl::Time deadline = absl::Now() + absl::Seconds(5);
   while (absl::Now() < deadline) {
     kalki::QueryFilter filter;
     filter.caller_agent_id = "test_caller";
-
-    auto result_or = engine->QueryLogs("stored conversations", filter);
+    const auto result_or = engine.QueryLogs("stored conversations", filter);
     if (result_or.ok() && result_or->status == kalki::QueryCompletionStatus::kComplete &&
-        result_or->records.size() >= expected) {
-      return result_or.value();
+        result_or->records.size() == 3) {
+      query_result = *result_or;
+      found = true;
+      break;
     }
     absl::SleepFor(absl::Milliseconds(25));
   }
-  return std::nullopt;
+
+  EXPECT_TRUE(found);
+  EXPECT_EQ(query_result.status, kalki::QueryCompletionStatus::kComplete);
+  EXPECT_EQ(query_result.records.size(), 3u);
+
+  engine.Shutdown();
+  std::error_code ec;
+  std::filesystem::remove_all(base_dir, ec);
 }
 
-class DatabaseE2ETest : public ::testing::Test {
- protected:
-  void SetUp() override {
-    base_dir_ = CreateTempDir();
-    config_ = BuildTestConfig(base_dir_);
-  }
+TEST(DatabaseE2ETest, FilterByAgentID) {
+  const std::string base_dir = CreateTempDir();
+  const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
+  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
+                               std::make_unique<FakeEmbeddingClient>());
+  const auto init_status = engine.Initialize();
+  EXPECT_TRUE(init_status.ok());
+  const absl::Time now = absl::Now();
+  const auto add1 = engine.AppendConversation("agent_a", "session_1", "conversation one", now);
+  const auto add2 =
+      engine.AppendConversation("agent_b", "session_2", "conversation two", now + absl::Seconds(1));
+  const auto add3 = engine.AppendConversation("agent_c", "session_3", "conversation three",
+                                              now + absl::Seconds(2));
+  EXPECT_TRUE(add1.ok());
+  EXPECT_TRUE(add2.ok());
+  EXPECT_TRUE(add3.ok());
+  kalki::QueryExecutionResult query_result;
+  bool found = false;
 
-  void TearDown() override {
-    if (engine_ != nullptr) {
-      engine_->Shutdown();
+  const absl::Time deadline = absl::Now() + absl::Seconds(5);
+  while (absl::Now() < deadline) {
+    kalki::QueryFilter filter;
+    filter.caller_agent_id = "test_caller";
+    filter.agent_id = "agent_b";
+    const auto result_or = engine.QueryLogs("stored conversations", filter);
+    if (result_or.ok() && result_or->status == kalki::QueryCompletionStatus::kComplete &&
+        result_or->records.size() == 1) {
+      query_result = *result_or;
+      found = true;
+      break;
     }
-    engine_.reset();
-
-    std::error_code ec;
-    std::filesystem::remove_all(base_dir_, ec);
+    absl::SleepFor(absl::Milliseconds(25));
   }
 
-  std::string base_dir_;
-  kalki::DatabaseConfig config_;
-  std::unique_ptr<kalki::DatabaseEngine> engine_;
-};
+  EXPECT_TRUE(found);
+  EXPECT_EQ(query_result.records.size(), 1u);
+  EXPECT_EQ(query_result.records[0].agent_id, "agent_b");
 
-TEST_F(DatabaseE2ETest, DatabaseIsInitialized) {
-  engine_ = std::make_unique<kalki::DatabaseEngine>(config_, std::make_unique<FakeLlmClient>(),
-                                                    std::make_unique<FakeEmbeddingClient>());
-
-  auto init_status = engine_->Initialize();
-  EXPECT_TRUE(init_status.ok());
-  EXPECT_TRUE(std::filesystem::exists(config_.data_dir));
-  EXPECT_TRUE(std::filesystem::exists(config_.fresh_block_dir));
-  EXPECT_TRUE(std::filesystem::exists(config_.baked_block_dir));
+  engine.Shutdown();
+  std::error_code ec;
+  std::filesystem::remove_all(base_dir, ec);
 }
 
-TEST_F(DatabaseE2ETest, StoreLogSucceeds) {
-  engine_ = std::make_unique<kalki::DatabaseEngine>(config_, std::make_unique<FakeLlmClient>(),
-                                                    std::make_unique<FakeEmbeddingClient>());
-
-  auto init_status = engine_->Initialize();
+TEST(DatabaseE2ETest, FilterBySessionID) {
+  const std::string base_dir = CreateTempDir();
+  const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
+  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
+                               std::make_unique<FakeEmbeddingClient>());
+  const auto init_status = engine.Initialize();
   EXPECT_TRUE(init_status.ok());
-
   const absl::Time now = absl::Now();
-  auto add1 = engine_->AppendConversation("agent_a", "session_1", "conversation one", now);
-  auto add2 = engine_->AppendConversation("agent_b", "session_2", "conversation two",
-                                          now + absl::Seconds(1));
-  auto add3 = engine_->AppendConversation("agent_c", "session_3", "conversation three",
-                                          now + absl::Seconds(2));
-
+  const auto add1 = engine.AppendConversation("agent_a", "session_1", "conversation one", now);
+  const auto add2 =
+      engine.AppendConversation("agent_b", "session_2", "conversation two", now + absl::Seconds(1));
+  const auto add3 = engine.AppendConversation("agent_c", "session_3", "conversation three",
+                                              now + absl::Seconds(2));
   EXPECT_TRUE(add1.ok());
   EXPECT_TRUE(add2.ok());
   EXPECT_TRUE(add3.ok());
+  kalki::QueryExecutionResult query_result;
+  bool found = false;
+
+
+  const absl::Time deadline = absl::Now() + absl::Seconds(5);
+  while (absl::Now() < deadline) {
+    kalki::QueryFilter filter;
+    filter.caller_agent_id = "test_caller";
+    filter.session_id = "session_3";
+    const auto result_or = engine.QueryLogs("stored conversations", filter);
+    if (result_or.ok() && result_or->status == kalki::QueryCompletionStatus::kComplete &&
+        result_or->records.size() == 1) {
+      query_result = *result_or;
+      found = true;
+      break;
+    }
+    absl::SleepFor(absl::Milliseconds(25));
+  }
+
+  EXPECT_TRUE(found);
+  EXPECT_EQ(query_result.records.size(), 1u);
+  EXPECT_EQ(query_result.records[0].session_id, "session_3");
+
+  engine.Shutdown();
+  std::error_code ec;
+  std::filesystem::remove_all(base_dir, ec);
 }
 
-TEST_F(DatabaseE2ETest, QueryLogSucceeds) {
-  engine_ = std::make_unique<kalki::DatabaseEngine>(config_, std::make_unique<FakeLlmClient>(),
-                                                    std::make_unique<FakeEmbeddingClient>());
-
-  auto init_status = engine_->Initialize();
+TEST(DatabaseE2ETest, FilterByTimestamp) {
+  const std::string base_dir = CreateTempDir();
+  const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
+  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
+                               std::make_unique<FakeEmbeddingClient>());
+  const auto init_status = engine.Initialize();
   EXPECT_TRUE(init_status.ok());
-
   const absl::Time now = absl::Now();
-  auto add1 = engine_->AppendConversation("agent_a", "session_1", "conversation one", now);
-  auto add2 = engine_->AppendConversation("agent_b", "session_2", "conversation two",
-                                          now + absl::Seconds(1));
-  auto add3 = engine_->AppendConversation("agent_c", "session_3", "conversation three",
-                                          now + absl::Seconds(2));
-
+  const auto ts1 = now;
+  const auto ts2 = now + absl::Seconds(1);
+  const auto ts3 = now + absl::Seconds(2);
+  const auto add1 = engine.AppendConversation("agent_a", "session_1", "conversation one", ts1);
+  const auto add2 = engine.AppendConversation("agent_b", "session_2", "conversation two", ts2);
+  const auto add3 = engine.AppendConversation("agent_c", "session_3", "conversation three", ts3);
   EXPECT_TRUE(add1.ok());
   EXPECT_TRUE(add2.ok());
   EXPECT_TRUE(add3.ok());
+  kalki::QueryExecutionResult query_result;
+  bool found = false;
 
-  auto result_opt = WaitForQueryRecords(engine_.get(), 3);
-  ASSERT_TRUE(result_opt.has_value()) << "Timed out waiting for query to return expected records";
 
-  const kalki::QueryExecutionResult& result = result_opt.value();
-  EXPECT_EQ(result.status, kalki::QueryCompletionStatus::kComplete);
-  EXPECT_EQ(result.records.size(), 3u);
+  const absl::Time deadline = absl::Now() + absl::Seconds(5);
+  while (absl::Now() < deadline) {
+    kalki::QueryFilter filter;
+    filter.caller_agent_id = "test_caller";
+    filter.start_time = ts2;
+    filter.end_time = ts2;
+    const auto result_or = engine.QueryLogs("stored conversations", filter);
+    if (result_or.ok() && result_or->status == kalki::QueryCompletionStatus::kComplete &&
+        result_or->records.size() == 1) {
+      query_result = *result_or;
+      found = true;
+      break;
+    }
+    absl::SleepFor(absl::Milliseconds(25));
+  }
+
+  EXPECT_TRUE(found);
+  EXPECT_EQ(query_result.records.size(), 1u);
+  EXPECT_EQ(query_result.records[0].agent_id, "agent_b");
+  EXPECT_EQ(query_result.records[0].session_id, "session_2");
+
+  engine.Shutdown();
+  std::error_code ec;
+  std::filesystem::remove_all(base_dir, ec);
+}
+
+TEST(DatabaseE2ETest, AllFilters) {
+  const std::string base_dir = CreateTempDir();
+  const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
+  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
+                               std::make_unique<FakeEmbeddingClient>());
+  const auto init_status = engine.Initialize();
+  EXPECT_TRUE(init_status.ok());
+  const absl::Time now = absl::Now();
+  const auto ts1 = now;
+  const auto ts2 = now + absl::Seconds(1);
+  const auto ts3 = now + absl::Seconds(2);
+  const auto add1 = engine.AppendConversation("agent_a", "session_1", "conversation one", ts1);
+  const auto add2 = engine.AppendConversation("agent_b", "session_2", "conversation two", ts2);
+  const auto add3 = engine.AppendConversation("agent_c", "session_3", "conversation three", ts3);
+  EXPECT_TRUE(add1.ok());
+  EXPECT_TRUE(add2.ok());
+  EXPECT_TRUE(add3.ok());
+  kalki::QueryExecutionResult query_result;
+  bool found = false;
+
+  const absl::Time deadline = absl::Now() + absl::Seconds(5);
+  while (absl::Now() < deadline) {
+    kalki::QueryFilter filter;
+    filter.caller_agent_id = "test_caller";
+    filter.agent_id = "agent_c";
+    filter.session_id = "session_3";
+    filter.start_time = ts3;
+    filter.end_time = ts3;
+    const auto result_or = engine.QueryLogs("stored conversations", filter);
+    if (result_or.ok() && result_or->status == kalki::QueryCompletionStatus::kComplete &&
+        result_or->records.size() == 1) {
+      query_result = *result_or;
+      found = true;
+      break;
+    }
+    absl::SleepFor(absl::Milliseconds(25));
+  }
+
+  EXPECT_TRUE(found);
+  EXPECT_EQ(query_result.records.size(), 1u);
+  EXPECT_EQ(query_result.records[0].agent_id, "agent_c");
+  EXPECT_EQ(query_result.records[0].session_id, "session_3");
+
+  engine.Shutdown();
+  std::error_code ec;
+  std::filesystem::remove_all(base_dir, ec);
 }
 
 }  // namespace
