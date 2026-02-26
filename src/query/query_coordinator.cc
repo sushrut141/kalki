@@ -15,6 +15,7 @@
 #include "absl/time/time.h"
 #include "kalki/storage/baked_block.h"
 #include "kalki/storage/bloom_filter.h"
+#include "kalki/storage/fresh_block.h"
 
 namespace kalki {
 
@@ -37,6 +38,28 @@ bool MatchesRecordFilter(const BakedHeaderEntry& entry, const QueryFilter& filte
   return true;
 }
 
+int64_t ToMicros(const google::protobuf::Timestamp& ts) {
+  return static_cast<int64_t>(ts.seconds()) * 1000000LL + static_cast<int64_t>(ts.nanos()) / 1000LL;
+}
+
+bool MatchesProcessedRecordFilter(const ProcessedRecord& record, const QueryFilter& filter) {
+  if (filter.agent_id.has_value() && record.agent_id() != *filter.agent_id) {
+    return false;
+  }
+  if (filter.session_id.has_value() && record.session_id() != *filter.session_id) {
+    return false;
+  }
+
+  const int64_t ts_micros = ToMicros(record.timestamp());
+  if (filter.start_time.has_value() && ts_micros < absl::ToUnixMicros(*filter.start_time)) {
+    return false;
+  }
+  if (filter.end_time.has_value() && ts_micros > absl::ToUnixMicros(*filter.end_time)) {
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 QueryCoordinator::QueryCoordinator(const DatabaseConfig& config, MetadataStore* metadata_store,
@@ -54,6 +77,44 @@ absl::StatusOr<std::vector<QueryRecord>> QueryCoordinator::ProcessBlockGroup(
   for (const auto& block : group) {
     DLOG(INFO) << "component=query_worker event=scan_block block_id=" << block.block_id
                << " path=" << block.block_path;
+    if (block.block_type == "FRESH") {
+      auto records_or = FreshBlockReader::ReadAll(block.block_path);
+      if (!records_or.ok()) {
+        LOG(ERROR) << "component=query_worker event=fresh_read_failed block_id=" << block.block_id
+                   << " error=" << records_or.status();
+        continue;
+      }
+
+      std::vector<std::string> summaries;
+      summaries.reserve(records_or->size());
+      for (const ProcessedRecord& record : *records_or) {
+        summaries.push_back(record.summary());
+      }
+
+      auto scores_or = similarity_engine_.ScoreSummaries(query, summaries);
+      if (!scores_or.ok()) {
+        return scores_or.status();
+      }
+
+      for (size_t i = 0; i < records_or->size(); ++i) {
+        const ProcessedRecord& record = (*records_or)[i];
+        if ((*scores_or)[i] < config_.similarity_threshold) {
+          continue;
+        }
+        if (!MatchesProcessedRecordFilter(record, filter)) {
+          continue;
+        }
+
+        QueryRecord out;
+        out.agent_id = record.agent_id();
+        out.session_id = record.session_id();
+        out.timestamp = absl::FromUnixMicros(ToMicros(record.timestamp()));
+        out.raw_conversation_log = record.raw_conversation_log();
+        output.push_back(std::move(out));
+      }
+      continue;
+    }
+
     if (filter.agent_id.has_value() && !block.agent_bloom.empty()) {
       BloomFilter filter_agent = BloomFilter::Deserialize(block.agent_bloom);
       if (!filter_agent.PossiblyContains(*filter.agent_id)) {
@@ -120,12 +181,17 @@ absl::StatusOr<std::vector<QueryRecord>> QueryCoordinator::ProcessBlockGroup(
 
 absl::StatusOr<QueryExecutionResult> QueryCoordinator::Query(const std::string& query,
                                                              const QueryFilter& filter) {
-  auto candidates_or = metadata_store_->FindCandidateBakedBlocks(filter);
-  if (!candidates_or.ok()) {
-    return candidates_or.status();
+  auto baked_candidates_or = metadata_store_->FindCandidateBakedBlocks(filter);
+  if (!baked_candidates_or.ok()) {
+    return baked_candidates_or.status();
+  }
+  auto fresh_candidates_or = metadata_store_->FindCandidateFreshBlocks(filter);
+  if (!fresh_candidates_or.ok()) {
+    return fresh_candidates_or.status();
   }
 
-  const std::vector<BlockMetadata>& candidates = *candidates_or;
+  std::vector<BlockMetadata> candidates = *baked_candidates_or;
+  candidates.insert(candidates.end(), fresh_candidates_or->begin(), fresh_candidates_or->end());
   if (candidates.empty()) {
     QueryExecutionResult empty;
     empty.status = QueryCompletionStatus::kComplete;

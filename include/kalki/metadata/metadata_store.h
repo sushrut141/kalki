@@ -45,6 +45,8 @@ class MetadataStore {
 
   absl::StatusOr<std::vector<BlockMetadata>> FindCandidateBakedBlocks(
       const QueryFilter& filter) const ABSL_LOCKS_EXCLUDED(mutex_);
+  absl::StatusOr<std::vector<BlockMetadata>> FindCandidateFreshBlocks(
+      const QueryFilter& filter) const ABSL_LOCKS_EXCLUDED(mutex_);
 
  private:
   absl::Status EnsureOpen() const ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);

@@ -337,4 +337,52 @@ absl::StatusOr<std::vector<BlockMetadata>> MetadataStore::FindCandidateBakedBloc
   return blocks;
 }
 
+absl::StatusOr<std::vector<BlockMetadata>> MetadataStore::FindCandidateFreshBlocks(
+    const QueryFilter& filter) const {
+  absl::MutexLock lock(&mutex_);
+  if (auto status = EnsureOpen(); !status.ok()) {
+    return status;
+  }
+
+  int64_t min_bound = 0;
+  int64_t max_bound = std::numeric_limits<int64_t>::max();
+  if (filter.start_time.has_value()) {
+    min_bound = absl::ToUnixMicros(*filter.start_time);
+  }
+  if (filter.end_time.has_value()) {
+    max_bound = absl::ToUnixMicros(*filter.end_time);
+  }
+
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT block_id, block_path, block_type, state, record_count, "
+      "min_timestamp_micros, max_timestamp_micros, parent_block_id "
+      "FROM blocks WHERE block_type='FRESH' AND state IN ('ACTIVE', 'SEALED') AND "
+      "(state='ACTIVE' OR (min_timestamp_micros <= ? AND max_timestamp_micros >= ?))";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing candidate fresh blocks query");
+  }
+  sqlite3_bind_int64(stmt, 1, max_bound);
+  sqlite3_bind_int64(stmt, 2, min_bound);
+
+  std::vector<BlockMetadata> blocks;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    BlockMetadata m;
+    m.block_id = sqlite3_column_int64(stmt, 0);
+    m.block_path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    m.block_type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    m.state = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    m.record_count = sqlite3_column_int64(stmt, 4);
+    m.min_timestamp_micros = sqlite3_column_int64(stmt, 5);
+    m.max_timestamp_micros = sqlite3_column_int64(stmt, 6);
+    m.parent_block_id = sqlite3_column_int64(stmt, 7);
+    blocks.push_back(std::move(m));
+  }
+
+  sqlite3_finalize(stmt);
+  DLOG(INFO) << "component=metadata event=candidate_fresh_blocks count=" << blocks.size()
+             << " min_bound=" << min_bound << " max_bound=" << max_bound;
+  return blocks;
+}
+
 }  // namespace kalki

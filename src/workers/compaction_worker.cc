@@ -1,5 +1,6 @@
 #include "kalki/workers/compaction_worker.h"
 
+#include <filesystem>
 #include <string>
 
 #include "absl/log/log.h"
@@ -16,6 +17,14 @@ CompactionWorker::CompactionWorker(const DatabaseConfig& config, MetadataStore* 
     : config_(config), metadata_store_(metadata_store), compaction_queue_(compaction_queue) {}
 
 absl::Status CompactionWorker::RunOnce() {
+  // Block lifecycle modeled by (block_type, state):
+  // - FRESH + ACTIVE: current append target for ingestion.
+  // - FRESH + SEALED: closed for writes, eligible for compaction.
+  // - FRESH + COMPACTED: already compacted into a baked block.
+  // - BAKED + READY: queryable compacted block.
+  //
+  // This worker consumes sealed fresh blocks and creates baked ready blocks,
+  // then marks the source fresh block compacted in metadata.
   auto maybe_task = compaction_queue_->PopWithTimeout(absl::Milliseconds(5));
   if (!maybe_task.has_value()) {
     DLOG(INFO) << "component=compaction event=no_task";
@@ -58,6 +67,17 @@ absl::Status CompactionWorker::RunOnce() {
   LOG(INFO) << "component=compaction event=baked_block_created fresh_block_id="
             << task.fresh_block_id << " baked_block_id=" << *create_status
             << " records=" << records_or->size();
+
+  std::error_code ec;
+  const bool deleted = std::filesystem::remove(task.fresh_block_path, ec);
+  if (!deleted || ec) {
+    LOG(WARNING) << "component=compaction event=fresh_block_delete_failed fresh_block_id="
+                 << task.fresh_block_id << " path=" << task.fresh_block_path
+                 << " error=" << ec.message();
+  } else {
+    LOG(INFO) << "component=compaction event=fresh_block_deleted fresh_block_id="
+              << task.fresh_block_id << " path=" << task.fresh_block_path;
+  }
 
   return absl::OkStatus();
 }
