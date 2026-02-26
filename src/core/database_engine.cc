@@ -129,6 +129,10 @@ absl::Status DatabaseEngine::AppendConversation(const std::string& agent_id,
   if (!append_or.ok()) {
     return append_or.status();
   }
+  auto count_status = metadata_store_->IncrementWalRecordCount(1);
+  if (!count_status.ok()) {
+    return count_status;
+  }
 
   LOG(INFO) << "component=database_engine event=append_wal offset=" << *append_or
             << " agent_id=" << agent_id << " session_id=" << session_id;

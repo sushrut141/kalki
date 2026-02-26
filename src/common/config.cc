@@ -17,6 +17,9 @@ ABSL_FLAG(std::string, embedding_model_path, "./third_party/models/all-minilm-v2
           "Local all-minilm:v2 GGUF model file path used for in-process embeddings");
 ABSL_FLAG(int, embedding_threads, 2, "Number of CPU threads for local embedding inference");
 ABSL_FLAG(int, max_records_per_fresh_block, 2000, "Max records per fresh block");
+ABSL_FLAG(
+    int, wal_trim_threshold_records, 0,
+    "Trim WAL when record count exceeds this value. 0 means use 2*max_records_per_fresh_block");
 ABSL_FLAG(int, wal_read_batch_size, 200, "WAL read batch size");
 ABSL_FLAG(int, query_worker_threads, 8, "Worker thread count for query execution");
 ABSL_FLAG(double, similarity_threshold, 0.2, "Similarity threshold for summary filtering");
@@ -43,6 +46,7 @@ DatabaseConfig LoadConfigFromFlags() {
   cfg.embedding_threads = absl::GetFlag(FLAGS_embedding_threads);
 
   cfg.max_records_per_fresh_block = absl::GetFlag(FLAGS_max_records_per_fresh_block);
+  cfg.wal_trim_threshold_records = absl::GetFlag(FLAGS_wal_trim_threshold_records);
   cfg.wal_read_batch_size = absl::GetFlag(FLAGS_wal_read_batch_size);
   cfg.query_worker_threads = absl::GetFlag(FLAGS_query_worker_threads);
 

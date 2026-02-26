@@ -41,9 +41,10 @@ absl::Status MetadataStore::Initialize() {
   const char* kSchema = R"sql(
 CREATE TABLE IF NOT EXISTS wal_state (
   id INTEGER PRIMARY KEY CHECK(id=1),
-  last_processed_offset INTEGER NOT NULL
+  last_processed_offset INTEGER NOT NULL,
+  wal_record_count INTEGER NOT NULL DEFAULT 0
 );
-INSERT OR IGNORE INTO wal_state(id, last_processed_offset) VALUES (1, 0);
+INSERT OR IGNORE INTO wal_state(id, last_processed_offset, wal_record_count) VALUES (1, 0, 0);
 
 CREATE TABLE IF NOT EXISTS blocks (
   block_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,6 +66,15 @@ ON blocks(block_type, state, min_timestamp_micros, max_timestamp_micros);
 
   if (sqlite3_exec(db_, kSchema, nullptr, nullptr, nullptr) != SQLITE_OK) {
     return SqliteError(db_, "failed applying metadata schema");
+  }
+
+  if (sqlite3_exec(db_,
+                   "ALTER TABLE wal_state ADD COLUMN wal_record_count INTEGER NOT NULL DEFAULT 0",
+                   nullptr, nullptr, nullptr) != SQLITE_OK) {
+    const std::string err = sqlite3_errmsg(db_);
+    if (err.find("duplicate column name") == std::string::npos) {
+      return SqliteError(db_, "failed ensuring wal_record_count column");
+    }
   }
 
   LOG(INFO) << "component=metadata event=initialized path=" << db_path_;
@@ -117,6 +127,70 @@ absl::Status MetadataStore::SetWalOffset(int64_t offset) {
   }
   sqlite3_finalize(stmt);
   DLOG(INFO) << "component=metadata event=wal_offset_updated offset=" << offset;
+  return absl::OkStatus();
+}
+
+absl::StatusOr<int64_t> MetadataStore::GetWalRecordCount() {
+  absl::MutexLock lock(&mutex_);
+  if (auto status = EnsureOpen(); !status.ok()) {
+    return status;
+  }
+
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "SELECT wal_record_count FROM wal_state WHERE id=1";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing wal record count query");
+  }
+
+  int64_t count = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    count = sqlite3_column_int64(stmt, 0);
+  }
+  sqlite3_finalize(stmt);
+  return count;
+}
+
+absl::Status MetadataStore::SetWalRecordCount(int64_t count) {
+  absl::MutexLock lock(&mutex_);
+  if (auto status = EnsureOpen(); !status.ok()) {
+    return status;
+  }
+
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "UPDATE wal_state SET wal_record_count=? WHERE id=1";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing wal record count update");
+  }
+  sqlite3_bind_int64(stmt, 1, count);
+
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return SqliteError(db_, "failed updating wal record count");
+  }
+  sqlite3_finalize(stmt);
+  DLOG(INFO) << "component=metadata event=wal_record_count_set count=" << count;
+  return absl::OkStatus();
+}
+
+absl::Status MetadataStore::IncrementWalRecordCount(int64_t delta) {
+  absl::MutexLock lock(&mutex_);
+  if (auto status = EnsureOpen(); !status.ok()) {
+    return status;
+  }
+
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "UPDATE wal_state SET wal_record_count = wal_record_count + ? WHERE id=1";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing wal record count increment");
+  }
+  sqlite3_bind_int64(stmt, 1, delta);
+
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return SqliteError(db_, "failed incrementing wal record count");
+  }
+  sqlite3_finalize(stmt);
+  DLOG(INFO) << "component=metadata event=wal_record_count_incremented delta=" << delta;
   return absl::OkStatus();
 }
 

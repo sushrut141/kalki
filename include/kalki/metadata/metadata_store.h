@@ -28,6 +28,9 @@ class MetadataStore {
 
   absl::StatusOr<int64_t> GetWalOffset() ABSL_LOCKS_EXCLUDED(mutex_);
   absl::Status SetWalOffset(int64_t offset) ABSL_LOCKS_EXCLUDED(mutex_);
+  absl::StatusOr<int64_t> GetWalRecordCount() ABSL_LOCKS_EXCLUDED(mutex_);
+  absl::Status SetWalRecordCount(int64_t count) ABSL_LOCKS_EXCLUDED(mutex_);
+  absl::Status IncrementWalRecordCount(int64_t delta) ABSL_LOCKS_EXCLUDED(mutex_);
 
   absl::StatusOr<std::optional<BlockMetadata>> GetActiveFreshBlock() ABSL_LOCKS_EXCLUDED(mutex_);
   absl::StatusOr<int64_t> CreateFreshBlock(const std::string& path) ABSL_LOCKS_EXCLUDED(mutex_);

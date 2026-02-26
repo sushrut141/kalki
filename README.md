@@ -162,6 +162,7 @@ Default config in Kalki:
 
 - `--embedding_model_path=./third_party/models/all-minilm-v2.gguf`
 - `--embedding_threads=2`
+- `--wal_trim_threshold_records=0` (uses `2 * max_records_per_fresh_block` when zero)
 
 ## Run
 

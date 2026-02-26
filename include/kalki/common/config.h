@@ -21,6 +21,7 @@ struct DatabaseConfig {
   int embedding_threads = 2;
 
   int max_records_per_fresh_block = 2000;
+  int wal_trim_threshold_records = 0;
   int wal_read_batch_size = 200;
   int query_worker_threads = 8;
 

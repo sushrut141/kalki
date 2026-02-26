@@ -30,6 +30,7 @@ class IngestionWorker {
  private:
   absl::Status EnsureActiveFreshBlock();
   absl::Status RotateFreshBlock();
+  absl::Status MaybeTrimWal(int64_t current_offset, int64_t wal_record_count);
 
   DatabaseConfig config_;
   WalStore* wal_store_;

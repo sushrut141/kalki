@@ -1,10 +1,12 @@
 #include "kalki/workers/ingestion_worker.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <limits>
 #include <string>
 #include <utility>
 
+#include "absl/cleanup/cleanup.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
@@ -109,6 +111,42 @@ absl::Status IngestionWorker::RotateFreshBlock() {
   return EnsureActiveFreshBlock();
 }
 
+absl::Status IngestionWorker::MaybeTrimWal(int64_t current_offset, int64_t wal_record_count) {
+  const int keep_records = std::max(1, config_.max_records_per_fresh_block);
+  const int threshold_records = config_.wal_trim_threshold_records > 0
+                                    ? config_.wal_trim_threshold_records
+                                    : 2 * keep_records;
+
+  if (wal_record_count <= threshold_records) {
+    return absl::OkStatus();
+  }
+
+  auto lock_status = wal_store_->LockForMaintenance();
+  if (!lock_status.ok()) {
+    return lock_status;
+  }
+  auto unlock = absl::Cleanup([this]() { wal_store_->UnlockForMaintenance(); });
+
+  auto trim_or = wal_store_->TrimToLastRecordsLocked(keep_records, current_offset);
+  if (!trim_or.ok()) {
+    return trim_or.status();
+  }
+
+  auto st = metadata_store_->SetWalOffset(trim_or->new_offset);
+  if (!st.ok()) {
+    return st;
+  }
+  st = metadata_store_->SetWalRecordCount(trim_or->kept_records);
+  if (!st.ok()) {
+    return st;
+  }
+
+  LOG(INFO) << "component=ingestion event=wal_trimmed total_records=" << trim_or->total_records
+            << " kept_records=" << trim_or->kept_records
+            << " threshold_records=" << threshold_records << " new_offset=" << trim_or->new_offset;
+  return absl::OkStatus();
+}
+
 absl::Status IngestionWorker::RunOnce() {
   auto status = EnsureActiveFreshBlock();
   if (!status.ok()) {
@@ -119,15 +157,20 @@ absl::Status IngestionWorker::RunOnce() {
   if (!offset_or.ok()) {
     return offset_or.status();
   }
+  auto wal_count_or = metadata_store_->GetWalRecordCount();
+  if (!wal_count_or.ok()) {
+    return wal_count_or.status();
+  }
 
   auto batch_or = wal_store_->ReadBatchFromOffset(*offset_or, config_.wal_read_batch_size);
   if (!batch_or.ok()) {
     return batch_or.status();
   }
   if (batch_or->empty()) {
-    return absl::OkStatus();
+    return MaybeTrimWal(*offset_or, *wal_count_or);
   }
 
+  int64_t latest_offset = *offset_or;
   for (const auto& envelope : *batch_or) {
     WalRecord wal_record;
     if (!wal_record.ParseFromString(envelope.payload)) {
@@ -183,6 +226,12 @@ absl::Status IngestionWorker::RunOnce() {
     if (!status.ok()) {
       return status;
     }
+    latest_offset = envelope.next_offset;
+  }
+
+  status = MaybeTrimWal(latest_offset, *wal_count_or);
+  if (!status.ok()) {
+    return status;
   }
 
   LOG(INFO) << "component=ingestion event=processed_batch records=" << batch_or->size();
