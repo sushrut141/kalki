@@ -25,6 +25,7 @@ class QueryCoordinator;
 class DatabaseEngine {
  public:
   explicit DatabaseEngine(DatabaseConfig config);
+  DatabaseEngine(DatabaseConfig config, std::unique_ptr<LlmClient> llm_client);
   ~DatabaseEngine();
 
   absl::Status Initialize();

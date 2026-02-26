@@ -34,6 +34,11 @@ google::protobuf::Timestamp ToProtoTimestamp(absl::Time time) {
 DatabaseEngine::DatabaseEngine(DatabaseConfig config)
     : config_(std::move(config)), query_thread_pool_(config_.query_worker_threads) {}
 
+DatabaseEngine::DatabaseEngine(DatabaseConfig config, std::unique_ptr<LlmClient> llm_client)
+    : config_(std::move(config)),
+      query_thread_pool_(config_.query_worker_threads),
+      llm_client_(std::move(llm_client)) {}
+
 DatabaseEngine::~DatabaseEngine() { Shutdown(); }
 
 absl::Status DatabaseEngine::Initialize() {
@@ -43,7 +48,9 @@ absl::Status DatabaseEngine::Initialize() {
 
   wal_store_ = std::make_unique<WalStore>(config_.wal_path);
   metadata_store_ = std::make_unique<MetadataStore>(config_.metadata_db_path);
-  llm_client_ = std::make_unique<GeminiLlmClient>(config_.llm_api_key, config_.llm_model);
+  if (!llm_client_) {
+    llm_client_ = std::make_unique<GeminiLlmClient>(config_.llm_api_key, config_.llm_model);
+  }
 
   if (auto st = wal_store_->Initialize(); !st.ok()) {
     return st;
