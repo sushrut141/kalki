@@ -1,39 +1,45 @@
 # Kalki
 
-Single-instance leader database for autonomous-agent conversation logs.
+Database designed for the high-concurrency needs of autonomous agents. 
+Unlike traditional vector databases that index noisy, raw logs, Kalki uses a Tablet Architecture 
+to decouple semantic indexing from raw data persistence.
 
-## What is implemented
+## 🚀 Motivation: The Context Crisis
 
-- gRPC API generated from protobuf definitions:
-  - `StoreLog(agent_id, session_id, conversation_log, timestamp)`
-  - `QueryLogs(caller_agent_id, query, optional filters...)`
-- WAL-first write path:
-  - Appends protobuf `WalRecord` to WAL with length prefix
-  - Flushes to disk before returning success
-- Ingestion worker:
-  - Tracks WAL progress in SQLite metadata DB
-  - Summarizes conversation logs with inheritable LLM interface (`LlmClient`)
-  - Gemini implementation (`GeminiLlmClient`) calls Gemini `generateContent` over HTTPS
-  - Boundary-aware splitting is delegated to Gemini via prompt rules for >500-word logs
-- Block storage:
-  - Fresh blocks: uncompressed protobuf list
-  - Baked blocks: sorted by `(timestamp, agent_id, session_id)`
-  - Header is compressed as a whole, data records individually compressed (zstd if available)
-  - Header stores timestamp, IDs, summary, and data offsets/sizes
-- Metadata DB (SQLite):
-  - WAL cursor
-  - Fresh/baked block rows
-  - record counts, time ranges, bloom filters
-- Compaction worker:
-  - Converts sealed fresh blocks into baked blocks
-  - Updates metadata with baked block stats and bloom filters
-- Query coordinator:
-  - Uses metadata time range + bloom filter pruning
-  - Dispatches block groups to a pre-started worker thread pool
-  - Workers load baked headers only first
-  - Similarity scoring over summaries via FAISS
-  - Applies similarity/time/agent/session filtering before data-section reads
-  - Returns `COMPLETE`, `INCOMPLETE`, or `INTERNAL_ERROR`
+Autonomous agents running 24/7 produce millions of log lines. 
+Existing solutions (Standard RAG, Vector DBs, or Local Markdown files) force a trade-off:
+ - The Noise Problem: Indexing every raw "thought" token makes vector search imprecise.
+ - The Decompression Tax: To retrieve one specific context, current databases often have to decompress entire data pages, killing throughput.
+ - The Token Tax: Agents shouldn't have to read their entire history to find a single past decision.
+
+Kalki solves this by treating agent history like a Log-Structured Merge-Tree (LSM), 
+where the index is a high-signal summary and the raw data is retrieved only on demand.
+
+## ✨ Key Features
+1. Tablet-Based Storage ArchitectureData is persisted in "Tablets" consisting of two distinct sections:
+ - The Header: Contains compressed 2-line summaries for every record, alongside metadata (Agent ID, Session ID, Time Range) and byte-offsets.
+ - The Body: Contains the individual, heavily compressed raw conversation payloads.
+
+2. Semantic Predicate Pushdown
+
+The query engine filters tablets by structured metadata (e.g., session_id or timestamp) first. 
+It then performs an in-memory FAISS vector search specifically on the decompressed 2-line summaries in the header.
+
+3. $O(1)$ Random Access Retrieval
+
+Once a semantic match is found in the header, it uses the stored offset to pluck the raw payload directly from the body. 
+You only pay the decompression cost for the data you actually need.
+
+4. Background Compaction
+
+Write operations are $O(1)$ append-only logs. 
+A background worker periodically chunks the logs and uses a small LLM to generate the 2-line summaries 
+that populate the Tablet Headers, ensuring the "agent loop" is never blocked.
+
+5. High Signal-to-Noise Retrieval
+
+By embedding Summaries instead of Raw Logs, the vector space is "sharper." 
+This leads to significantly higher recall and accuracy when agents are searching for past intents, decisions, or state changes.
 
 ## Build
 
