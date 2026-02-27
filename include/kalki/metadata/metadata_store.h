@@ -34,7 +34,8 @@ class MetadataStore {
 
   absl::StatusOr<std::optional<BlockMetadata>> GetActiveFreshBlock() ABSL_LOCKS_EXCLUDED(mutex_);
   absl::StatusOr<int64_t> CreateFreshBlock(const std::string& path) ABSL_LOCKS_EXCLUDED(mutex_);
-  absl::Status SetBlockRecordCount(int64_t block_id, int64_t count) ABSL_LOCKS_EXCLUDED(mutex_);
+  absl::Status SetFreshBlockRecordCount(int64_t block_id, int64_t count)
+      ABSL_LOCKS_EXCLUDED(mutex_);
   absl::Status IncrementBlockRecordCount(int64_t block_id, int64_t delta)
       ABSL_LOCKS_EXCLUDED(mutex_);
   absl::Status SealFreshBlock(int64_t block_id, int64_t record_count, int64_t min_ts_micros,

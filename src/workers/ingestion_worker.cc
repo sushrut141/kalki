@@ -220,7 +220,7 @@ absl::Status IngestionWorker::RunOnce() {
   }
 
   if (active_block_id_ != 0) {
-    status = metadata_store_->SetBlockRecordCount(active_block_id_, active_record_count_);
+    status = metadata_store_->SetFreshBlockRecordCount(active_block_id_, active_record_count_);
     CHECK(status.ok()) << "ingestion failed to persist active block record count block_id="
                        << active_block_id_ << " count=" << active_record_count_
                        << " status=" << status;

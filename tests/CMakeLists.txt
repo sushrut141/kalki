@@ -25,3 +25,8 @@ add_executable(kalki_query_behavior_test query_behavior_test.cc)
 target_link_libraries(kalki_query_behavior_test PRIVATE
   kalki::core kalki::metadata absl::time GTest::gtest_main)
 add_test(NAME kalki_query_behavior_test COMMAND kalki_query_behavior_test)
+
+add_executable(kalki_metadata_store_test metadata_store_test.cc)
+target_link_libraries(kalki_metadata_store_test PRIVATE
+  kalki::core kalki::metadata absl::time GTest::gtest_main)
+add_test(NAME kalki_metadata_store_test COMMAND kalki_metadata_store_test)

@@ -67,7 +67,7 @@ Kalki requires:
 - gRPC
 - SQLite3
 - libcurl
-- zstd (optional compression, enabled if found)
+- zstd (required; all records are compressed)
 - FAISS (required)
 - llama.cpp (required for local embedding inference)
 - GoogleTest (for tests)

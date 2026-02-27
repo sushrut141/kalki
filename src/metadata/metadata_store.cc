@@ -251,23 +251,28 @@ absl::StatusOr<int64_t> MetadataStore::CreateFreshBlock(const std::string& path)
   return sqlite3_last_insert_rowid(db_);
 }
 
-absl::Status MetadataStore::SetBlockRecordCount(int64_t block_id, int64_t count) {
+absl::Status MetadataStore::SetFreshBlockRecordCount(int64_t block_id, int64_t count) {
   absl::MutexLock lock(&mutex_);
   if (auto status = EnsureOpen(); !status.ok()) {
     return status;
   }
 
   sqlite3_stmt* stmt = nullptr;
-  const char* sql = "UPDATE blocks SET record_count = ? WHERE block_id = ?";
+  const char* sql =
+      "UPDATE blocks SET record_count = ? WHERE block_id = ? AND block_type = 'FRESH'";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-    return SqliteError(db_, "failed preparing set block record count statement");
+    return SqliteError(db_, "failed preparing set fresh block record count statement");
   }
   sqlite3_bind_int64(stmt, 1, count);
   sqlite3_bind_int64(stmt, 2, block_id);
 
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
-    return SqliteError(db_, "failed setting block record count");
+    return SqliteError(db_, "failed setting fresh block record count");
+  }
+  if (sqlite3_changes(db_) == 0) {
+    sqlite3_finalize(stmt);
+    return absl::NotFoundError("fresh block not found for record count update");
   }
   sqlite3_finalize(stmt);
   return absl::OkStatus();

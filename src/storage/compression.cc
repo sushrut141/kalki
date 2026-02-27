@@ -4,15 +4,11 @@
 #include <string>
 
 #include "absl/status/status.h"
-
-#ifdef KALKI_HAVE_ZSTD
 #include <zstd.h>
-#endif
 
 namespace kalki {
 
 absl::StatusOr<std::string> CompressZstd(const std::string& input) {
-#ifdef KALKI_HAVE_ZSTD
   const size_t bound = ZSTD_compressBound(input.size());
   std::string output(bound, '\0');
   const size_t compressed_size =
@@ -22,14 +18,10 @@ absl::StatusOr<std::string> CompressZstd(const std::string& input) {
   }
   output.resize(compressed_size);
   return output;
-#else
-  return input;
-#endif
 }
 
 absl::StatusOr<std::string> DecompressZstd(const std::string& input,
                                            size_t expected_max_output_size) {
-#ifdef KALKI_HAVE_ZSTD
   unsigned long long frame_size = ZSTD_getFrameContentSize(input.data(), input.size());
   if (frame_size == ZSTD_CONTENTSIZE_ERROR) {
     return absl::InvalidArgumentError("invalid zstd frame");
@@ -45,9 +37,6 @@ absl::StatusOr<std::string> DecompressZstd(const std::string& input,
   }
   output.resize(decompressed);
   return output;
-#else
-  return input;
-#endif
 }
 
 }  // namespace kalki

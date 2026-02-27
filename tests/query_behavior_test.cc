@@ -195,6 +195,7 @@ TEST(QueryBehaviorTest, QueryWorksInParallelWithIngestion) {
   const auto seed_status =
       engine.AppendConversation("seed_agent", "seed_session", kPassingConversation, base_time);
   EXPECT_TRUE(seed_status.ok());
+  absl::SleepFor(absl::Seconds(1));
 
   std::atomic<bool> append_failed(false);
   std::atomic<bool> query_failed(false);
