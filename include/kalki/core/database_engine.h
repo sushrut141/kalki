@@ -40,6 +40,9 @@ class DatabaseEngine {
   absl::StatusOr<QueryExecutionResult> QueryLogs(const std::string& query,
                                                  const QueryFilter& filter);
 
+  WalStore* GetWalStoreForTest();
+  MetadataStore* GetMetadataStoreForTest();
+
  private:
   void IngestionLoop();
   void CompactionLoop();

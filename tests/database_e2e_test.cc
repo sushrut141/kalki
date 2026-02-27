@@ -8,34 +8,13 @@
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "common/fake_clients.h"
 #include "gtest/gtest.h"
 #include "kalki/common/config.h"
 #include "kalki/common/types.h"
 #include "kalki/core/database_engine.h"
-#include "kalki/llm/embedding_client.h"
-#include "kalki/llm/llm_client.h"
 
 namespace {
-
-class FakeLlmClient final : public kalki::LlmClient {
- public:
-  absl::StatusOr<std::vector<std::string>> SummarizeConversation(
-      const std::string& conversation_log) override {
-    return std::vector<std::string>{absl::StrCat("summary: ", conversation_log)};
-  }
-};
-
-class FakeEmbeddingClient final : public kalki::EmbeddingClient {
- public:
-  absl::StatusOr<std::vector<float>> EmbedText(const std::string& text) override {
-    std::vector<float> v(8, 0.0f);
-    for (char c : text) {
-      const size_t idx = static_cast<size_t>(static_cast<unsigned char>(c)) % v.size();
-      v[idx] += 1.0f;
-    }
-    return v;
-  }
-};
 
 std::string CreateTempDir() {
   const auto dir = std::filesystem::temp_directory_path() /
@@ -68,8 +47,8 @@ kalki::DatabaseConfig BuildTestConfig(const std::string& base_dir) {
 TEST(DatabaseE2ETest, DatabaseIsInitialized) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
-                               std::make_unique<FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
+                               std::make_unique<kalki::test::FakeEmbeddingClient>());
 
   const auto init_status = engine.Initialize();
 
@@ -86,8 +65,8 @@ TEST(DatabaseE2ETest, DatabaseIsInitialized) {
 TEST(DatabaseE2ETest, StoreLogSucceeds) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
-                               std::make_unique<FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
+                               std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   const absl::Time now = absl::Now();
 
@@ -110,8 +89,8 @@ TEST(DatabaseE2ETest, StoreLogSucceeds) {
 TEST(DatabaseE2ETest, QueryLogSucceeds) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
-                               std::make_unique<FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
+                               std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   EXPECT_TRUE(init_status.ok());
   const absl::Time now = absl::Now();
@@ -152,8 +131,8 @@ TEST(DatabaseE2ETest, QueryLogSucceeds) {
 TEST(DatabaseE2ETest, FilterByAgentID) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
-                               std::make_unique<FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
+                               std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   EXPECT_TRUE(init_status.ok());
   const absl::Time now = absl::Now();
@@ -195,8 +174,8 @@ TEST(DatabaseE2ETest, FilterByAgentID) {
 TEST(DatabaseE2ETest, FilterBySessionID) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
-                               std::make_unique<FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
+                               std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   EXPECT_TRUE(init_status.ok());
   const absl::Time now = absl::Now();
@@ -210,7 +189,6 @@ TEST(DatabaseE2ETest, FilterBySessionID) {
   EXPECT_TRUE(add3.ok());
   kalki::QueryExecutionResult query_result;
   bool found = false;
-
 
   const absl::Time deadline = absl::Now() + absl::Seconds(5);
   while (absl::Now() < deadline) {
@@ -239,8 +217,8 @@ TEST(DatabaseE2ETest, FilterBySessionID) {
 TEST(DatabaseE2ETest, FilterByTimestamp) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
-                               std::make_unique<FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
+                               std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   EXPECT_TRUE(init_status.ok());
   const absl::Time now = absl::Now();
@@ -255,7 +233,6 @@ TEST(DatabaseE2ETest, FilterByTimestamp) {
   EXPECT_TRUE(add3.ok());
   kalki::QueryExecutionResult query_result;
   bool found = false;
-
 
   const absl::Time deadline = absl::Now() + absl::Seconds(5);
   while (absl::Now() < deadline) {
@@ -286,8 +263,8 @@ TEST(DatabaseE2ETest, FilterByTimestamp) {
 TEST(DatabaseE2ETest, AllFilters) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildTestConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<FakeLlmClient>(),
-                               std::make_unique<FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
+                               std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   EXPECT_TRUE(init_status.ok());
   const absl::Time now = absl::Now();

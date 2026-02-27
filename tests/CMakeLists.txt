@@ -13,5 +13,10 @@ add_test(NAME kalki_local_embedding_client_test COMMAND kalki_local_embedding_cl
 
 add_executable(kalki_database_e2e_test database_e2e_test.cc)
 target_link_libraries(kalki_database_e2e_test PRIVATE
-        kalki::core kalki::llm absl::time GTest::gtest_main)
+  kalki::core kalki::llm absl::time GTest::gtest_main)
 add_test(NAME kalki_database_e2e_test COMMAND kalki_database_e2e_test)
+
+add_executable(kalki_block_lifecycle_test block_lifecycle_test.cc)
+target_link_libraries(kalki_block_lifecycle_test PRIVATE
+  kalki::core kalki::metadata absl::time GTest::gtest_main)
+add_test(NAME kalki_block_lifecycle_test COMMAND kalki_block_lifecycle_test)

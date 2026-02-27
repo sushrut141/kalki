@@ -144,6 +144,10 @@ absl::StatusOr<QueryExecutionResult> DatabaseEngine::QueryLogs(const std::string
   return query_coordinator_->Query(query, filter);
 }
 
+WalStore* DatabaseEngine::GetWalStoreForTest() { return wal_store_.get(); }
+
+MetadataStore* DatabaseEngine::GetMetadataStoreForTest() { return metadata_store_.get(); }
+
 void DatabaseEngine::IngestionLoop() {
   while (!stop_.load(std::memory_order_relaxed)) {
     DLOG(INFO) << "component=database_engine event=ingestion_tick";
