@@ -41,6 +41,17 @@ that populate the Tablet Headers, ensuring the "agent loop" is never blocked.
 By embedding Summaries instead of Raw Logs, the vector space is "sharper." 
 This leads to significantly higher recall and accuracy when agents are searching for past intents, decisions, or state changes.
 
+# Benchmark Report
+
+- StoreLog QPS: 2887.81
+- StoreLog p50 latency (ms): 0.30
+- StoreLog p90 latency (ms): 0.39
+- QueryLogs QPS: 239.66
+- Query p50 latency (ms): 3.75
+- Query p90 latency (ms): 4.02
+
+You can run the benchmarks using the benchmark command in the scripts directory.  
+
 ## Build
 
 ```bash
