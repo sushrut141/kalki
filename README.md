@@ -1,8 +1,13 @@
-# Kalki
+# Kalki - Database for agents.
 
-Database designed for the high-concurrency needs of autonomous agents. 
+<p align="center">
+  <img src="kalki.png" alt="Kalki logo" width="360" />
+</p>
+
+Kalki is designed for the high-concurrency needs of autonomous agents. 
 Unlike traditional vector databases that index noisy, raw logs, Kalki uses a Tablet Architecture 
 to decouple semantic indexing from raw data persistence.
+It also summarizes agent logs using an LLM before indexing to speed up queries.  
 
 ## 🚀 Motivation: The Context Crisis
 
@@ -16,39 +21,30 @@ Kalki solves this by treating agent history like a Log-Structured Merge-Tree (LS
 where the index is a high-signal summary and the raw data is retrieved only on demand.
 
 ## ✨ Key Features
-1. Tablet-Based Storage ArchitectureData is persisted in "Tablets" consisting of two distinct sections:
- - The Header: Contains compressed 2-line summaries for every record, alongside metadata (Agent ID, Session ID, Time Range) and byte-offsets.
- - The Body: Contains the individual, heavily compressed raw conversation payloads.
 
-2. Semantic Predicate Pushdown
+1. Tablet-Based Storage Architecture  
+Data is persisted in tablets with two sections:
+- Header: compressed summaries, metadata (`agent_id`, `session_id`, time range), and offsets.
+- Body: compressed raw conversation payloads.
 
-The query engine filters tablets by structured metadata (e.g., session_id or timestamp) first. 
-It then performs an in-memory FAISS vector search specifically on the decompressed 2-line summaries in the header.
+2. Semantic Predicate Pushdown  
+The query engine first filters blocks using metadata (time + bloom filters), then runs FAISS similarity over summaries.
 
-3. $O(1)$ Random Access Retrieval
+3. O(1) Payload Retrieval  
+After finding matches in headers, Kalki uses byte offsets to fetch only matching raw payloads from block bodies.
 
-Once a semantic match is found in the header, it uses the stored offset to pluck the raw payload directly from the body. 
-You only pay the decompression cost for the data you actually need.
+4. Background Compaction and Summarization  
+Writes are WAL append-first. Ingestion + compaction workers summarize and bake blocks asynchronously.
 
-4. Background Compaction
-
-Write operations are $O(1)$ append-only logs. 
-A background worker periodically chunks the logs and uses a small LLM to generate the 2-line summaries 
-that populate the Tablet Headers, ensuring the "agent loop" is never blocked.
-
-5. High Signal-to-Noise Retrieval
-
-By embedding Summaries instead of Raw Logs, the vector space is "sharper." 
-This leads to significantly higher recall and accuracy when agents are searching for past intents, decisions, or state changes.
+5. High Signal Retrieval Quality  
+Embeddings are built from summaries (not raw noisy logs), improving retrieval precision and reducing search noise.
 
 # Benchmark Report
 
-- StoreLog QPS: 2887.81
-- StoreLog p50 latency (ms): 0.30
-- StoreLog p90 latency (ms): 0.39
-- QueryLogs QPS: 239.66
-- Query p50 latency (ms): 3.75
-- Query p90 latency (ms): 4.02
+| Benchmark | QPS | p50 (ms) | p90 (ms) |
+| --- | ---: | ---: | ---: |
+| StoreLog | 2887.81 | 0.30 | 0.39 |
+| QueryLogs | 239.66 | 3.75 | 4.02 |
 
 You can run the benchmarks using the benchmark command in the scripts directory.  
 
