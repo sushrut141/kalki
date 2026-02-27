@@ -10,6 +10,7 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
+#include "kalki/storage/bloom_filter.h"
 #include "sqlite3.h"
 
 namespace kalki {
@@ -426,6 +427,19 @@ absl::StatusOr<std::vector<BlockMetadata>> MetadataStore::FindCandidateBakedBloc
     }
 
     m.parent_block_id = sqlite3_column_int64(stmt, 9);
+
+    if (filter.agent_id.has_value() && !m.agent_bloom.empty()) {
+      BloomFilter agent_filter = BloomFilter::Deserialize(m.agent_bloom);
+      if (!agent_filter.PossiblyContains(*filter.agent_id)) {
+        continue;
+      }
+    }
+    if (filter.session_id.has_value() && !m.session_bloom.empty()) {
+      BloomFilter session_filter = BloomFilter::Deserialize(m.session_bloom);
+      if (!session_filter.PossiblyContains(*filter.session_id)) {
+        continue;
+      }
+    }
     blocks.push_back(std::move(m));
   }
 

@@ -11,6 +11,7 @@ target_include_directories(kalki_metadata
 target_link_libraries(kalki_metadata
   PUBLIC
     kalki::common
+    kalki::storage
     SQLite::SQLite3
     absl::log
     absl::status
