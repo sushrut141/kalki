@@ -1,0 +1,54 @@
+{
+  "context": {
+    "date": "2026-02-27T20:20:19+05:30",
+    "host_name": "Sushruts-MacBook-Air.local",
+    "executable": "/Users/sushrutshivaswamy/Documents/kalki/build/benchmarks/kalki_agent_log_service_benchmark",
+    "num_cpus": 8,
+    "mhz_per_cpu": 24,
+    "cpu_scaling_enabled": false,
+    "caches": [
+    ],
+    "load_avg": [12.3276,6.35107,5.41943],
+    "library_version": "v1.9.5",
+    "library_build_type": "release",
+    "json_schema_version": 1
+  },
+  "benchmarks": [
+    {
+      "name": "BM_AgentLogService_StoreLog/iterations:100000",
+      "family_index": 0,
+      "per_family_instance_index": 0,
+      "run_name": "BM_AgentLogService_StoreLog/iterations:100000",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 100000,
+      "real_time": 3.4628366500139236e+05,
+      "cpu_time": 2.6989877999999997e+05,
+      "time_unit": "ns",
+      "items_per_second": 3.7050927017899085e+03,
+      "p50_ms": 2.9679100000000003e-01,
+      "p90_ms": 3.9183299999999999e-01,
+      "qps": 2.8878053613496318e+03
+    },
+    {
+      "name": "BM_AgentLogService_QueryLogs/iterations:10000",
+      "family_index": 1,
+      "per_family_instance_index": 0,
+      "run_name": "BM_AgentLogService_QueryLogs/iterations:10000",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 10000,
+      "real_time": 8.3452099708840260e+06,
+      "cpu_time": 5.0577377999999989e+06,
+      "time_unit": "ns",
+      "items_per_second": 3.9543370555903476e+02,
+      "p50_ms": 3.7479170000000002e+00,
+      "p90_ms": 4.0238750000000003e+00,
+      "qps": 2.3965841569795151e+02
+    }
+  ]
+}

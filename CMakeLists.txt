@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(KALKI_BUILD_TESTS "Build tests" ON)
+option(KALKI_BUILD_BENCHMARKS "Build benchmark targets" OFF)
 
 find_package(PkgConfig REQUIRED)
 find_package(absl CONFIG REQUIRED)
@@ -56,4 +57,8 @@ add_subdirectory(src/server)
 if (KALKI_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif ()
+
+if (KALKI_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif ()

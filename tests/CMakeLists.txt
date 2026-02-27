@@ -30,3 +30,10 @@ add_executable(kalki_metadata_store_test metadata_store_test.cc)
 target_link_libraries(kalki_metadata_store_test PRIVATE
   kalki::core kalki::metadata absl::time GTest::gtest_main)
 add_test(NAME kalki_metadata_store_test COMMAND kalki_metadata_store_test)
+
+add_executable(kalki_agent_log_service_test agent_log_service_test.cc)
+target_compile_definitions(kalki_agent_log_service_test
+  PRIVATE KALKI_PROJECT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_link_libraries(kalki_agent_log_service_test PRIVATE
+  kalki::api kalki::core kalki::llm gRPC::grpc++ absl::time GTest::gtest_main)
+add_test(NAME kalki_agent_log_service_test COMMAND kalki_agent_log_service_test)
