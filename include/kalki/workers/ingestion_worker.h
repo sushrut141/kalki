@@ -40,6 +40,7 @@ class IngestionWorker {
   TaskQueue<CompactionTask>* compaction_queue_;
 
   FreshBlockWriter active_writer_;
+  bool active_writer_open_ = false;
   int64_t active_block_id_ = 0;
   std::string active_block_path_;
   int64_t active_record_count_ = 0;

@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "absl/cleanup/cleanup.h"
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
@@ -57,9 +58,11 @@ absl::Status IngestionWorker::EnsureActiveFreshBlock() {
     if (!open_status.ok()) {
       return open_status;
     }
+    active_writer_open_ = true;
     return absl::OkStatus();
   }
 
+  // No active fresh block exists so create one.
   const int64_t now = absl::ToUnixMicros(absl::Now());
   const std::string path = absl::StrCat(config_.fresh_block_dir, "/fresh_", now, ".fblk");
   auto id_or = metadata_store_->CreateFreshBlock(path);
@@ -70,6 +73,7 @@ absl::Status IngestionWorker::EnsureActiveFreshBlock() {
   if (!open_status.ok()) {
     return open_status;
   }
+  active_writer_open_ = true;
 
   active_block_id_ = *id_or;
   active_block_path_ = path;
@@ -90,10 +94,10 @@ absl::Status IngestionWorker::RotateFreshBlock() {
   int64_t min_ts = active_record_count_ > 0 ? active_min_ts_micros_ : 0;
   int64_t max_ts = active_record_count_ > 0 ? active_max_ts_micros_ : 0;
 
-  auto seal_status = metadata_store_->SealFreshBlock(active_block_id_, min_ts, max_ts);
-  if (!seal_status.ok()) {
-    return seal_status;
-  }
+  auto seal_status =
+      metadata_store_->SealFreshBlock(active_block_id_, active_record_count_, min_ts, max_ts);
+  CHECK(seal_status.ok()) << "ingestion failed to seal fresh block id=" << active_block_id_
+                          << " status=" << seal_status;
 
   compaction_queue_->Push(
       CompactionTask{.fresh_block_id = active_block_id_, .fresh_block_path = active_block_path_});
@@ -102,6 +106,7 @@ absl::Status IngestionWorker::RotateFreshBlock() {
             << " records=" << active_record_count_;
 
   active_writer_.Close();
+  active_writer_open_ = false;
   active_block_id_ = 0;
   active_block_path_.clear();
   active_record_count_ = 0;
@@ -133,13 +138,9 @@ absl::Status IngestionWorker::MaybeTrimWal(int64_t current_offset, int64_t wal_r
   }
 
   auto st = metadata_store_->SetWalOffset(trim_or->new_offset);
-  if (!st.ok()) {
-    return st;
-  }
+  CHECK(st.ok()) << "ingestion failed to update metadata wal offset after trim status=" << st;
   st = metadata_store_->SetWalRecordCount(trim_or->kept_records);
-  if (!st.ok()) {
-    return st;
-  }
+  CHECK(st.ok()) << "ingestion failed to update metadata wal count after trim status=" << st;
 
   LOG(INFO) << "component=ingestion event=wal_trimmed total_records=" << trim_or->total_records
             << " kept_records=" << trim_or->kept_records
@@ -199,15 +200,11 @@ absl::Status IngestionWorker::RunOnce() {
         processed.add_summary_embedding(v);
       }
 
+      CHECK(active_writer_open_) << "ingestion active writer is not initialized for block id="
+                                 << active_block_id_;
       status = active_writer_.Append(processed);
-      if (!status.ok()) {
-        return status;
-      }
-
-      status = metadata_store_->IncrementBlockRecordCount(active_block_id_, 1);
-      if (!status.ok()) {
-        return status;
-      }
+      CHECK(status.ok()) << "ingestion failed to append processed record to fresh block id="
+                         << active_block_id_ << " status=" << status;
 
       const int64_t ts_micros = ToMicros(wal_record.timestamp());
       active_min_ts_micros_ = std::min(active_min_ts_micros_, ts_micros);
@@ -216,23 +213,25 @@ absl::Status IngestionWorker::RunOnce() {
 
       if (active_record_count_ >= config_.max_records_per_fresh_block) {
         status = RotateFreshBlock();
-        if (!status.ok()) {
-          return status;
-        }
+        CHECK(status.ok()) << "ingestion failed rotating fresh block status=" << status;
       }
-    }
-
-    status = metadata_store_->SetWalOffset(envelope.next_offset);
-    if (!status.ok()) {
-      return status;
     }
     latest_offset = envelope.next_offset;
   }
 
-  status = MaybeTrimWal(latest_offset, *wal_count_or);
-  if (!status.ok()) {
-    return status;
+  if (active_block_id_ != 0) {
+    status = metadata_store_->SetBlockRecordCount(active_block_id_, active_record_count_);
+    CHECK(status.ok()) << "ingestion failed to persist active block record count block_id="
+                       << active_block_id_ << " count=" << active_record_count_
+                       << " status=" << status;
   }
+
+  status = metadata_store_->SetWalOffset(latest_offset);
+  CHECK(status.ok()) << "ingestion failed to update wal offset at end of batch offset="
+                     << latest_offset << " status=" << status;
+
+  status = MaybeTrimWal(latest_offset, *wal_count_or);
+  CHECK(status.ok()) << "ingestion failed in wal trim check status=" << status;
 
   LOG(INFO) << "component=ingestion event=processed_batch records=" << batch_or->size();
   DLOG(INFO) << "component=ingestion event=active_block_state block_id=" << active_block_id_

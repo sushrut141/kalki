@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <string>
 
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
@@ -34,9 +35,9 @@ absl::Status CompactionWorker::RunOnce() {
   const CompactionTask task = std::move(*maybe_task);
 
   auto records_or = FreshBlockReader::ReadAll(task.fresh_block_path);
-  if (!records_or.ok()) {
-    return records_or.status();
-  }
+  CHECK(records_or.ok()) << "compaction failed to read fresh block fresh_block_id="
+                         << task.fresh_block_id << " path=" << task.fresh_block_path
+                         << " status=" << records_or.status();
   if (records_or->empty()) {
     LOG(INFO) << "component=compaction event=skip_empty_block fresh_block_id="
               << task.fresh_block_id;
@@ -53,16 +54,16 @@ absl::Status CompactionWorker::RunOnce() {
   std::string session_bloom;
   auto bake_status = BakedBlockWriter::Write(baked_path, std::move(*records_or), &min_ts, &max_ts,
                                              &agent_bloom, &session_bloom);
-  if (!bake_status.ok()) {
-    return bake_status;
-  }
+  CHECK(bake_status.ok()) << "compaction failed to write baked block fresh_block_id="
+                          << task.fresh_block_id << " baked_path=" << baked_path
+                          << " status=" << bake_status;
 
   auto create_status = metadata_store_->CreateBakedBlock(
       task.fresh_block_id, baked_path, static_cast<int64_t>(records_or->size()), min_ts, max_ts,
       agent_bloom, session_bloom);
-  if (!create_status.ok()) {
-    return create_status.status();
-  }
+  CHECK(create_status.ok()) << "compaction failed to write baked metadata fresh_block_id="
+                            << task.fresh_block_id << " baked_path=" << baked_path
+                            << " status=" << create_status.status();
 
   LOG(INFO) << "component=compaction event=baked_block_created fresh_block_id="
             << task.fresh_block_id << " baked_block_id=" << *create_status

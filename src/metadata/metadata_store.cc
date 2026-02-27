@@ -250,6 +250,28 @@ absl::StatusOr<int64_t> MetadataStore::CreateFreshBlock(const std::string& path)
   return sqlite3_last_insert_rowid(db_);
 }
 
+absl::Status MetadataStore::SetBlockRecordCount(int64_t block_id, int64_t count) {
+  absl::MutexLock lock(&mutex_);
+  if (auto status = EnsureOpen(); !status.ok()) {
+    return status;
+  }
+
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "UPDATE blocks SET record_count = ? WHERE block_id = ?";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing set block record count statement");
+  }
+  sqlite3_bind_int64(stmt, 1, count);
+  sqlite3_bind_int64(stmt, 2, block_id);
+
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return SqliteError(db_, "failed setting block record count");
+  }
+  sqlite3_finalize(stmt);
+  return absl::OkStatus();
+}
+
 absl::Status MetadataStore::IncrementBlockRecordCount(int64_t block_id, int64_t delta) {
   absl::MutexLock lock(&mutex_);
   if (auto status = EnsureOpen(); !status.ok()) {
@@ -272,8 +294,8 @@ absl::Status MetadataStore::IncrementBlockRecordCount(int64_t block_id, int64_t 
   return absl::OkStatus();
 }
 
-absl::Status MetadataStore::SealFreshBlock(int64_t block_id, int64_t min_ts_micros,
-                                           int64_t max_ts_micros) {
+absl::Status MetadataStore::SealFreshBlock(int64_t block_id, int64_t record_count,
+                                           int64_t min_ts_micros, int64_t max_ts_micros) {
   absl::MutexLock lock(&mutex_);
   if (auto status = EnsureOpen(); !status.ok()) {
     return status;
@@ -281,14 +303,16 @@ absl::Status MetadataStore::SealFreshBlock(int64_t block_id, int64_t min_ts_micr
 
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "UPDATE blocks SET state='SEALED', min_timestamp_micros=?, max_timestamp_micros=? "
+      "UPDATE blocks SET state='SEALED', record_count=?, min_timestamp_micros=?, "
+      "max_timestamp_micros=? "
       "WHERE block_id=?";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return SqliteError(db_, "failed preparing seal fresh block statement");
   }
-  sqlite3_bind_int64(stmt, 1, min_ts_micros);
-  sqlite3_bind_int64(stmt, 2, max_ts_micros);
-  sqlite3_bind_int64(stmt, 3, block_id);
+  sqlite3_bind_int64(stmt, 1, record_count);
+  sqlite3_bind_int64(stmt, 2, min_ts_micros);
+  sqlite3_bind_int64(stmt, 3, max_ts_micros);
+  sqlite3_bind_int64(stmt, 4, block_id);
 
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
