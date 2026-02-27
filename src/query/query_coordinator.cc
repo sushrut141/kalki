@@ -85,7 +85,7 @@ absl::StatusOr<std::vector<QueryRecord>> QueryCoordinator::ProcessBlockGroup(
         continue;
       }
 
-      std::vector<std::vector<float>> embeddings;
+      std::vector<SimilarityEngine::EmbeddingView> embeddings;
       std::vector<size_t> embedding_to_record_index;
       embeddings.reserve(records_or->size());
       embedding_to_record_index.reserve(records_or->size());
@@ -94,12 +94,9 @@ absl::StatusOr<std::vector<QueryRecord>> QueryCoordinator::ProcessBlockGroup(
         if (record.summary_embedding_size() == 0) {
           continue;
         }
-        std::vector<float> embedding;
-        embedding.reserve(static_cast<size_t>(record.summary_embedding_size()));
-        for (float v : record.summary_embedding()) {
-          embedding.push_back(v);
-        }
-        embeddings.push_back(std::move(embedding));
+        embeddings.push_back(SimilarityEngine::EmbeddingView{
+            .data = record.summary_embedding().data(),
+            .dims = static_cast<size_t>(record.summary_embedding_size())});
         embedding_to_record_index.push_back(i);
       }
 
@@ -148,7 +145,7 @@ absl::StatusOr<std::vector<QueryRecord>> QueryCoordinator::ProcessBlockGroup(
       continue;
     }
 
-    std::vector<std::vector<float>> embeddings;
+    std::vector<SimilarityEngine::EmbeddingView> embeddings;
     std::vector<int> embedding_to_entry_index;
     embeddings.reserve(static_cast<size_t>(header_or->entries_size()));
     embedding_to_entry_index.reserve(static_cast<size_t>(header_or->entries_size()));
@@ -157,12 +154,9 @@ absl::StatusOr<std::vector<QueryRecord>> QueryCoordinator::ProcessBlockGroup(
       if (entry.summary_embedding_size() == 0) {
         continue;
       }
-      std::vector<float> embedding;
-      embedding.reserve(static_cast<size_t>(entry.summary_embedding_size()));
-      for (float v : entry.summary_embedding()) {
-        embedding.push_back(v);
-      }
-      embeddings.push_back(std::move(embedding));
+      embeddings.push_back(SimilarityEngine::EmbeddingView{
+          .data = entry.summary_embedding().data(),
+          .dims = static_cast<size_t>(entry.summary_embedding_size())});
       embedding_to_entry_index.push_back(i);
     }
 

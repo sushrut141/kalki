@@ -3,10 +3,18 @@
 #include <filesystem>
 #include <fstream>
 
+#include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "absl/synchronization/mutex.h"
 
 namespace kalki {
+
+namespace {
+
+absl::Mutex g_single_fresh_block_mu;
+
+}  // namespace
 
 FreshBlockWriter::~FreshBlockWriter() { Close(); }
 
@@ -22,6 +30,9 @@ absl::Status FreshBlockWriter::Open(const std::string& path) {
 }
 
 absl::Status FreshBlockWriter::Append(const ProcessedRecord& record) {
+  CHECK(!path_.empty()) << "fresh block writer path is not initialized";
+  absl::WriterMutexLock writer_lock(g_single_fresh_block_mu);
+
   if (!file_.good()) {
     return absl::FailedPreconditionError("fresh block file is not open");
   }
@@ -47,6 +58,8 @@ void FreshBlockWriter::Close() {
 }
 
 absl::StatusOr<std::vector<ProcessedRecord>> FreshBlockReader::ReadAll(const std::string& path) {
+  absl::ReaderMutexLock reader_lock(g_single_fresh_block_mu);
+
   std::ifstream file(path, std::ios::binary);
   if (!file.good()) {
     return absl::InternalError(absl::StrCat("failed to open fresh block: ", path));

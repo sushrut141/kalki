@@ -2,6 +2,7 @@
 
 #include <faiss/IndexFlat.h>
 
+#include <cstring>
 #include <limits>
 #include <vector>
 
@@ -11,7 +12,7 @@ namespace kalki {
 
 absl::StatusOr<std::vector<float>> SimilarityEngine::ScoreEmbeddings(
     const std::vector<float>& query_embedding,
-    const std::vector<std::vector<float>>& summary_embeddings) const {
+    const std::vector<EmbeddingView>& summary_embeddings) const {
   if (query_embedding.empty()) {
     return absl::InvalidArgumentError("query embedding is empty");
   }
@@ -23,11 +24,16 @@ absl::StatusOr<std::vector<float>> SimilarityEngine::ScoreEmbeddings(
   std::vector<float> summary_matrix;
   summary_matrix.reserve(summary_embeddings.size() * query_embedding.size());
   for (const auto& embedding : summary_embeddings) {
-    if (embedding.size() != query_embedding.size()) {
+    if (embedding.data == nullptr || embedding.dims == 0) {
+      return absl::InvalidArgumentError("summary embedding pointer is null or empty");
+    }
+    if (embedding.dims != query_embedding.size()) {
       return absl::InvalidArgumentError(
           "summary embedding dimensions do not match query embedding dimensions");
     }
-    summary_matrix.insert(summary_matrix.end(), embedding.begin(), embedding.end());
+    const size_t start = summary_matrix.size();
+    summary_matrix.resize(start + embedding.dims);
+    std::memcpy(summary_matrix.data() + start, embedding.data, embedding.dims * sizeof(float));
   }
 
   faiss::IndexFlatIP index(dimensions);
