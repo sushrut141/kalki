@@ -1,0 +1,57 @@
+name: Build And Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Pull LFS Files
+        run: git lfs pull
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            ninja-build \
+            libabsl-dev \
+            protobuf-compiler \
+            libprotobuf-dev \
+            libgrpc++-dev \
+            grpc-proto \
+            libsqlite3-dev \
+            libcurl4-openssl-dev \
+            libzstd-dev \
+            libfaiss-dev \
+            libgtest-dev
+
+      - name: Build llama.cpp
+        run: |
+          git clone --depth=1 https://github.com/ggml-org/llama.cpp.git /tmp/llama.cpp
+          cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build -DBUILD_SHARED_LIBS=ON
+          cmake --build /tmp/llama.cpp/build -j"$(nproc)"
+          sudo cmake --install /tmp/llama.cpp/build --prefix /usr/local
+
+      - name: Configure
+        run: cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
