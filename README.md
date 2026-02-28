@@ -1,13 +1,16 @@
 # Kalki: The Ultra-High Throughput Semantic WAL for Agents
 
-<p align="center">
-  <img src="kalki.png" alt="Kalki logo" width="360" />
-</p>
+**Kalki** is a purpose-built database for the high-concurrency era of autonomous agents.
+Kalki provides single digit ms latencies for store retrieve operations for agent conversation
+logs at scale. It's built with agent orchestrators in mind that generate copius amount of data
+that other agents need to store and query quickly.
 
-**Kalki** is a purpose-built database for the high-concurrency "Execution Era" of autonomous agents.
-While standard vector databases (Pinecone, Weaviate) are optimized for "finding similar sentences," 
-Kalki is a **Semantic Write-Ahead Log** designed to persist, compact, and retrieve millions of agent thought-chain 
-records without the "Decompression Tax."
+Kalki takes an opinionated approach to agent logs.
+It expects an agent_id representing the agent storing the conversation, session_id representing
+the current action the agent is undertaking and the raw text of the agent's output.
+Records within Kalki can be queried using natural language along with addition filters on 
+agent, session ID and timestamps.
+
 
 ## 🚀 Motivation: The Context Crisis
 
