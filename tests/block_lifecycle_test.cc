@@ -31,8 +31,6 @@ kalki::DatabaseConfig BuildWalBlockConfig(const std::string& base_dir) {
   cfg.fresh_block_dir = base_dir + "/blocks/fresh";
   cfg.baked_block_dir = base_dir + "/blocks/baked";
   cfg.grpc_listen_address = "127.0.0.1:0";
-  cfg.llm_api_key = "unused";
-  cfg.llm_model = "unused";
   cfg.max_records_per_fresh_block = 10;
   cfg.wal_trim_threshold_records = 20;
   cfg.wal_read_batch_size = 256;
@@ -48,8 +46,7 @@ kalki::DatabaseConfig BuildWalBlockConfig(const std::string& base_dir) {
 TEST(BlockLifecycleTest, InitializingDatabaseEngineCreatesWalOnDisk) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildWalBlockConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   EXPECT_TRUE(init_status.ok());
   EXPECT_TRUE(std::filesystem::exists(config.data_dir));
@@ -69,8 +66,7 @@ TEST(BlockLifecycleTest, InitializingDatabaseEngineCreatesWalOnDisk) {
 TEST(BlockLifecycleTest, StoringLogsIncrementsWalCount) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildWalBlockConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
   EXPECT_TRUE(init_status.ok());
@@ -99,8 +95,7 @@ TEST(BlockLifecycleTest, StoringLogsIncrementsWalCount) {
 TEST(BlockLifecycleTest, StoringLogsCreatesFreshBlockOnDisk) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildWalBlockConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
   EXPECT_TRUE(init_status.ok());
@@ -131,8 +126,7 @@ TEST(BlockLifecycleTest, StoringLogsCreatesFreshBlockOnDisk) {
 TEST(BlockLifecycleTest, StoringLogsEventuallyLeadsToCreationOfABakedBlock) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildWalBlockConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
 
@@ -151,9 +145,10 @@ TEST(BlockLifecycleTest, StoringLogsEventuallyLeadsToCreationOfABakedBlock) {
   const kalki::QueryFilter filter;
   const auto baked_blocks_or = metadata_store->FindCandidateBakedBlocks(filter);
   EXPECT_TRUE(baked_blocks_or.ok());
-  EXPECT_FALSE(baked_blocks_or->empty());
+  EXPECT_EQ(baked_blocks_or->size(), 1);
   EXPECT_TRUE(std::filesystem::exists((*baked_blocks_or)[0].block_path));
   EXPECT_EQ(std::filesystem::path((*baked_blocks_or)[0].block_path).extension(), ".bblk");
+  EXPECT_EQ((*baked_blocks_or)[0].record_count, config.max_records_per_fresh_block);
 
   engine.Shutdown();
   std::error_code ec;
@@ -166,8 +161,7 @@ TEST(BlockLifecycleTest, StoringLogsEventuallyLeadsToCreationOfABakedBlock) {
 TEST(BlockLifecycleTest, PostCreationOfABakedBlockAFreshBlockIsAlsoCreated) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildWalBlockConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
 
@@ -210,8 +204,7 @@ TEST(BlockLifecycleTest, ExceedingWalTrimThresholdCausesWalTrimming) {
   kalki::DatabaseConfig config = BuildWalBlockConfig(base_dir);
   config.max_records_per_fresh_block = 10;
   config.wal_trim_threshold_records = 12;
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
   EXPECT_TRUE(init_status.ok());
@@ -244,8 +237,7 @@ TEST(BlockLifecycleTest, StoringLogsShowsCorrectCountOfRecordsAfterWalTrimming) 
   config.max_records_per_fresh_block = 10;
   config.wal_trim_threshold_records = 12;
   const int appended_records = 27;
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
   auto* wal_store = engine.GetWalStoreForTest();
