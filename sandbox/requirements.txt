@@ -1,0 +1,6 @@
+fastapi==0.115.0
+uvicorn==0.30.6
+python-multipart==0.0.20
+grpcio>=1.76.0,<2.0
+grpcio-tools>=1.76.0,<2.0
+protobuf>=6.31.0,<7.0

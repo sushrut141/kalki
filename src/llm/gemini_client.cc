@@ -16,6 +16,8 @@
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/strings/strip.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "google/protobuf/struct.pb.h"
 #include "google/protobuf/util/json_util.h"
 #include "kalki/common/retry.h"
@@ -59,6 +61,13 @@ const google::protobuf::Value* FindField(const google::protobuf::Struct& message
     return nullptr;
   }
   return &it->second;
+}
+
+std::string TruncateForLog(absl::string_view value, size_t max_chars = 512) {
+  if (value.size() <= max_chars) {
+    return std::string(value);
+  }
+  return absl::StrCat(value.substr(0, max_chars), "...(truncated ", value.size(), " bytes)");
 }
 
 }  // namespace
@@ -131,6 +140,7 @@ absl::StatusOr<std::string> GeminiLlmClient::PostGenerateContent(
                                        model_, ":generateContent?key=", api_key_);
 
   std::string response_body;
+  const absl::Time start = absl::Now();
 
   curl_slist* header_list = nullptr;
   header_list = curl_slist_append(header_list, "Content-Type: application/json");
@@ -157,6 +167,11 @@ absl::StatusOr<std::string> GeminiLlmClient::PostGenerateContent(
 
   long http_code = 0;
   curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
+  const int64_t latency_ms = absl::ToInt64Milliseconds(absl::Now() - start);
+  DLOG(INFO) << "component=gemini event=http_response model=" << model_
+             << " code=" << http_code << " latency_ms=" << latency_ms
+             << " response_bytes=" << response_body.size()
+             << " body_snippet=" << TruncateForLog(response_body);
   if (http_code < 200 || http_code >= 300) {
     return absl::InternalError(
         absl::StrCat("Gemini HTTP error ", http_code, " body=", response_body));
@@ -208,6 +223,8 @@ absl::StatusOr<std::string> GeminiLlmClient::ExtractCandidateText(
   if (parts.empty()) {
     return absl::InternalError("Gemini response candidates have no text parts");
   }
+  DLOG(INFO) << "component=gemini event=candidate_text_extracted parts=" << parts.size()
+             << " text_snippet=" << TruncateForLog(absl::StrJoin(parts, "\n"));
   return absl::StrJoin(parts, "\n");
 }
 
@@ -267,18 +284,34 @@ absl::StatusOr<std::vector<std::string>> GeminiLlmClient::SummarizeConversation(
       .backoff_multiplier = 2.0,
       .max_backoff = absl::Milliseconds(500),
   };
+  int attempt = 0;
   auto summaries_or = RetryStatusOr(
       [&]() -> absl::StatusOr<std::vector<std::string>> {
+        ++attempt;
+        DLOG(INFO) << "component=gemini event=attempt_start model=" << model_
+                   << " attempt=" << attempt;
         auto response_or = PostGenerateContent(*request_json_or);
         if (!response_or.ok()) {
+          DLOG(INFO) << "component=gemini event=attempt_failed model=" << model_
+                     << " attempt=" << attempt << " status=" << response_or.status();
           return response_or.status();
         }
 
         auto candidate_text_or = ExtractCandidateText(*response_or);
         if (!candidate_text_or.ok()) {
+          DLOG(INFO) << "component=gemini event=attempt_failed model=" << model_
+                     << " attempt=" << attempt << " status=" << candidate_text_or.status();
           return candidate_text_or.status();
         }
-        return ParseSummaryPayload(*candidate_text_or);
+        auto parsed_or = ParseSummaryPayload(*candidate_text_or);
+        if (!parsed_or.ok()) {
+          DLOG(INFO) << "component=gemini event=attempt_failed model=" << model_
+                     << " attempt=" << attempt << " status=" << parsed_or.status();
+          return parsed_or.status();
+        }
+        DLOG(INFO) << "component=gemini event=attempt_success model=" << model_
+                   << " attempt=" << attempt << " summaries=" << parsed_or->size();
+        return parsed_or;
       },
       [](const absl::Status& status) {
         return status.code() == absl::StatusCode::kInvalidArgument ||

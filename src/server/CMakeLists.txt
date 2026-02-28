@@ -1,5 +1,6 @@
 add_executable(kalkid
   main.cc
+  statusz_http_server.cc
 )
 
 target_link_libraries(kalkid

@@ -71,7 +71,6 @@ absl::Status BakedBlockWriter::Write(const std::string& path, std::vector<Proces
     entry->set_timestamp_unix_micros(ts);
     entry->set_agent_id(rec.agent_id());
     entry->set_session_id(rec.session_id());
-    entry->set_summary(rec.summary());
     entry->set_data_offset(running_offset);
     entry->set_data_size(static_cast<uint32_t>(compressed_or->size()));
     for (float v : rec.summary_embedding()) {

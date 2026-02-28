@@ -46,8 +46,6 @@ kalki::DatabaseConfig BuildQueryConfig(const std::string& base_dir) {
   cfg.fresh_block_dir = base_dir + "/blocks/fresh";
   cfg.baked_block_dir = base_dir + "/blocks/baked";
   cfg.grpc_listen_address = "127.0.0.1:0";
-  cfg.llm_api_key = "unused";
-  cfg.llm_model = "unused";
   cfg.max_records_per_fresh_block = 10;
   cfg.wal_trim_threshold_records = 20;
   cfg.wal_read_batch_size = 512;
@@ -90,8 +88,7 @@ TEST(QueryBehaviorTest, QueryWorksWithSmallNumberOfRecords) {
       18, expected_passing_records, [](int i) { return absl::StrCat("agent_", i % 3); },
       [](int i) { return absl::StrCat("session_", i % 4); },
       [&](int i) { return base_time + absl::Seconds(i); });
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
 
   EXPECT_TRUE(init_status.ok());
@@ -137,8 +134,7 @@ TEST(QueryBehaviorTest, QueryWorksWithLargeNumberOfRecords) {
       160, expected_passing_records, [](int i) { return absl::StrCat("agent_", i % 7); },
       [](int i) { return absl::StrCat("session_", i % 9); },
       [&](int i) { return base_time + absl::Seconds(i); });
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
 
@@ -186,8 +182,7 @@ TEST(QueryBehaviorTest, QueryWorksInParallelWithIngestion) {
   config.max_records_per_fresh_block = 1000;
   const int expected_passing_records = 1;
   const absl::Time base_time = absl::Now() - absl::Minutes(10);
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
 
   EXPECT_TRUE(init_status.ok());
@@ -264,8 +259,7 @@ TEST(QueryBehaviorTest, QueryReadsLimitedSetOfBlocksBasedOnAgentIdFilter) {
       },
       [](int i) { return absl::StrCat("session_", i % 10); },
       [&](int i) { return base_time + absl::Seconds(i); });
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
 
@@ -341,8 +335,7 @@ TEST(QueryBehaviorTest, QueryReadsLimitedSetOfBlocksBasedOnSessionIdFilter) {
                                             : absl::StrCat("other_session_", 1 + (i % 8));
       },
       [&](int i) { return base_time + absl::Seconds(i); });
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
 
@@ -417,8 +410,7 @@ TEST(QueryBehaviorTest, QueryReadsLimitedSetOfBlocksBasedOnTimestampIdFilter) {
       [&](int i) {
         return i < expected_passing_records ? passing_time : base_time + absl::Seconds(i);
       });
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
 

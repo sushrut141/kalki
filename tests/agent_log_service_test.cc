@@ -1,3 +1,5 @@
+#include "kalki/api/agent_log_service.h"
+
 #include <filesystem>
 #include <memory>
 #include <random>
@@ -11,10 +13,8 @@
 #include "grpcpp/grpcpp.h"
 #include "gtest/gtest.h"
 #include "kalki.grpc.pb.h"
-#include "kalki/api/agent_log_service.h"
 #include "kalki/common/config.h"
 #include "kalki/core/database_engine.h"
-#include "kalki/llm/llm_client.h"
 #include "kalki/llm/local_embedding_client.h"
 
 namespace {
@@ -22,31 +22,39 @@ namespace {
 constexpr char kExpectedAgentId[] = "agent_expected_fixed";
 constexpr char kExpectedSessionId[] = "session_expected_fixed";
 constexpr char kExpectedQuery[] = "Did the build pass?";
-constexpr char kExpectedSummary[] =
-    "Reviewed query behavior while ingestion was active.\n"
-    "Patched block filtering and record count updates.\n"
-    "Validated service responses with deterministic filters.";
 constexpr char kRawConversationLog[] =
     "We began by inspecting a recurring production issue where the query endpoint appeared to miss "
-    "recently ingested conversations for a specific agent session pair. The first debug pass focused "
+    "recently ingested conversations for a specific agent session pair. The first debug pass "
+    "focused "
     "on request validation and transport handling, because malformed timestamps can silently shift "
     "records outside expected windows. We confirmed request payloads looked healthy, so the team "
     "moved to pipeline internals and traced record flow from API write calls through WAL append, "
     "ingestion worker processing, and fresh block persistence. During this trace we observed that "
     "concurrent ingestion and query operations amplified timing windows around block rotation. A "
     "fresh block could be nearing seal state while query workers were building candidate sets, and "
-    "that made it critical that metadata and block files stayed consistent at each transition point. "
-    "We verified lock boundaries around the active fresh writer and ensured queries used read locks "
-    "when scanning fresh blocks. The investigation then turned to metadata candidate pruning, where "
-    "we used bloom filters for agent and session identifiers. Earlier logic deferred some bloom-based "
-    "skips until later stages, creating unnecessary scans. We tightened this by filtering candidate "
-    "baked blocks as early as metadata selection. Next we reviewed WAL trimming behavior because large "
-    "append bursts could grow files quickly and obscure regressions. The corrected trim flow uses a "
-    "maintenance lock, rewrites a clean temporary WAL, atomically swaps files, and updates both WAL "
-    "offset and count in metadata. We also validated that fresh block record counts are only updated "
+    "that made it critical that metadata and block files stayed consistent at each transition "
+    "point. "
+    "We verified lock boundaries around the active fresh writer and ensured queries used read "
+    "locks "
+    "when scanning fresh blocks. The investigation then turned to metadata candidate pruning, "
+    "where "
+    "we used bloom filters for agent and session identifiers. Earlier logic deferred some "
+    "bloom-based "
+    "skips until later stages, creating unnecessary scans. We tightened this by filtering "
+    "candidate "
+    "baked blocks as early as metadata selection. Next we reviewed WAL trimming behavior because "
+    "large "
+    "append bursts could grow files quickly and obscure regressions. The corrected trim flow uses "
+    "a "
+    "maintenance lock, rewrites a clean temporary WAL, atomically swaps files, and updates both "
+    "WAL "
+    "offset and count in metadata. We also validated that fresh block record counts are only "
+    "updated "
     "for fresh blocks, preventing accidental cross-type updates. After applying fixes, stress runs "
-    "showed stable service write acknowledgements and consistent query results for filtered requests. "
-    "The final verification included API-level tests through AgentLogService and confirmed the output "
+    "showed stable service write acknowledgements and consistent query results for filtered "
+    "requests. "
+    "The final verification included API-level tests through AgentLogService and confirmed the "
+    "output "
     "payload matched expected conversation records while irrelevant random records were excluded.";
 
 std::string CreateTempDir() {
@@ -73,8 +81,6 @@ kalki::DatabaseConfig BuildConfig(const std::string& base_dir) {
   cfg.fresh_block_dir = base_dir + "/blocks/fresh";
   cfg.baked_block_dir = base_dir + "/blocks/baked";
   cfg.grpc_listen_address = "127.0.0.1:0";
-  cfg.llm_api_key = "unused";
-  cfg.llm_model = "unused";
   cfg.embedding_model_path = ModelPath();
   cfg.embedding_threads = 2;
   cfg.max_records_per_fresh_block = 50;
@@ -89,16 +95,6 @@ kalki::DatabaseConfig BuildConfig(const std::string& base_dir) {
   return cfg;
 }
 
-class DelayedFakeLlmClient final : public kalki::LlmClient {
- public:
-  absl::StatusOr<std::vector<std::string>> SummarizeConversation(
-      const std::string& conversation_log) override {
-    (void)conversation_log;
-    absl::SleepFor(absl::Milliseconds(200));
-    return std::vector<std::string>{kExpectedSummary};
-  }
-};
-
 google::protobuf::Timestamp ToTimestamp(absl::Time t) {
   const int64_t micros = absl::ToUnixMicros(t);
   google::protobuf::Timestamp ts;
@@ -110,9 +106,8 @@ google::protobuf::Timestamp ToTimestamp(absl::Time t) {
 TEST(AgentLogServiceTest, StoreLog) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<DelayedFakeLlmClient>(),
-                               std::make_unique<kalki::LocalEmbeddingClient>(
-                                   config.embedding_model_path, config.embedding_threads));
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::LocalEmbeddingClient>(
+                                           config.embedding_model_path, config.embedding_threads));
   const auto init_status = engine.Initialize();
   kalki::AgentLogServiceImpl service(&engine);
 
@@ -143,9 +138,8 @@ TEST(AgentLogServiceTest, StoreLog) {
 TEST(AgentLogServiceTest, QueryLogs) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<DelayedFakeLlmClient>(),
-                               std::make_unique<kalki::LocalEmbeddingClient>(
-                                   config.embedding_model_path, config.embedding_threads));
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::LocalEmbeddingClient>(
+                                           config.embedding_model_path, config.embedding_threads));
   const auto init_status = engine.Initialize();
   kalki::AgentLogServiceImpl service(&engine);
   std::mt19937 rng(123);

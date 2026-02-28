@@ -15,6 +15,20 @@ struct sqlite3;
 
 namespace kalki {
 
+struct BakedBlockStatus {
+  int64_t block_id = 0;
+  int64_t record_count = 0;
+};
+
+struct StatuszSnapshot {
+  int64_t total_records_ingested = 0;
+  int64_t wal_record_count = 0;
+  int64_t fresh_block_record_count = 0;
+  std::vector<BakedBlockStatus> baked_blocks;
+  std::optional<absl::Time> last_ingestion_run;
+  std::optional<absl::Time> last_compaction_run;
+};
+
 // Thread-safe SQLite-backed metadata store.
 class MetadataStore {
  public:
@@ -52,6 +66,10 @@ class MetadataStore {
       const QueryFilter& filter) const ABSL_LOCKS_EXCLUDED(mutex_);
   absl::StatusOr<std::vector<BlockMetadata>> FindCandidateFreshBlocks(
       const QueryFilter& filter) const ABSL_LOCKS_EXCLUDED(mutex_);
+
+  absl::StatusOr<StatuszSnapshot> GetStatuszSnapshot() const ABSL_LOCKS_EXCLUDED(mutex_);
+  absl::Status SetLastIngestionRun(absl::Time time) ABSL_LOCKS_EXCLUDED(mutex_);
+  absl::Status SetLastCompactionRun(absl::Time time) ABSL_LOCKS_EXCLUDED(mutex_);
 
  private:
   absl::Status EnsureOpen() const ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);

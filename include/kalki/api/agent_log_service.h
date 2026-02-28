@@ -1,7 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
+#include "absl/status/statusor.h"
 #include "grpcpp/grpcpp.h"
 #include "kalki.grpc.pb.h"
 #include "kalki/core/database_engine.h"
@@ -17,6 +19,8 @@ class AgentLogServiceImpl final : public AgentLogService::Service {
 
   grpc::Status QueryLogs(grpc::ServerContext* context, const QueryRequest* request,
                          QueryResponse* response) override;
+
+  absl::StatusOr<std::string> RenderStatuszHtml() const;
 
  private:
   DatabaseEngine* engine_;

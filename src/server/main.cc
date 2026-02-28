@@ -8,6 +8,7 @@
 #include "kalki/common/config.h"
 #include "kalki/common/logging.h"
 #include "kalki/core/database_engine.h"
+#include "statusz_http_server.h"
 
 int main(int argc, char** argv) {
   absl::ParseCommandLine(argc, argv);
@@ -23,6 +24,13 @@ int main(int argc, char** argv) {
   }
 
   kalki::AgentLogServiceImpl service(&engine);
+  kalki::StatuszHttpServer statusz_server(config.statusz_listen_address, &service);
+  auto statusz_start = statusz_server.Start();
+  if (!statusz_start.ok()) {
+    LOG(ERROR) << "component=server event=statusz_start_failed addr="
+               << config.statusz_listen_address << " status=" << statusz_start;
+    return 1;
+  }
 
   grpc::ServerBuilder builder;
   builder.AddListeningPort(config.grpc_listen_address, grpc::InsecureServerCredentials());
@@ -36,6 +44,7 @@ int main(int argc, char** argv) {
   LOG(INFO) << "component=server event=started addr=" << config.grpc_listen_address;
   server->Wait();
 
+  statusz_server.Stop();
   engine.Shutdown();
   return 0;
 }

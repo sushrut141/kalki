@@ -43,6 +43,7 @@ absl::Status CompactionWorker::RunOnce() {
               << task.fresh_block_id;
     return absl::OkStatus();
   }
+  const int64_t baked_record_count = static_cast<int64_t>(records_or->size());
 
   const std::string baked_path =
       absl::StrCat(config_.baked_block_dir, "/baked_", task.fresh_block_id, "_",
@@ -58,16 +59,20 @@ absl::Status CompactionWorker::RunOnce() {
                           << task.fresh_block_id << " baked_path=" << baked_path
                           << " status=" << bake_status;
 
-  auto create_status = metadata_store_->CreateBakedBlock(
-      task.fresh_block_id, baked_path, static_cast<int64_t>(records_or->size()), min_ts, max_ts,
-      agent_bloom, session_bloom);
+  auto create_status =
+      metadata_store_->CreateBakedBlock(task.fresh_block_id, baked_path, baked_record_count, min_ts,
+                                        max_ts, agent_bloom, session_bloom);
   CHECK(create_status.ok()) << "compaction failed to write baked metadata fresh_block_id="
                             << task.fresh_block_id << " baked_path=" << baked_path
                             << " status=" << create_status.status();
 
+  auto status = metadata_store_->SetLastCompactionRun(absl::Now());
+  CHECK(status.ok()) << "compaction failed to update last compaction run timestamp status="
+                     << status;
+
   LOG(INFO) << "component=compaction event=baked_block_created fresh_block_id="
             << task.fresh_block_id << " baked_block_id=" << *create_status
-            << " records=" << records_or->size();
+            << " records=" << baked_record_count;
 
   std::error_code ec;
   const bool deleted = std::filesystem::remove(task.fresh_block_path, ec);

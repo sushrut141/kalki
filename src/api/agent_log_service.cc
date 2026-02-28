@@ -1,10 +1,12 @@
 #include "kalki/api/agent_log_service.h"
 
+#include <optional>
 #include <string>
 
 #include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
+#include "kalki/metadata/metadata_store.h"
 
 namespace kalki {
 
@@ -45,7 +47,10 @@ grpc::Status AgentLogServiceImpl::StoreLog(grpc::ServerContext* context,
   }
 
   auto st = engine_->AppendConversation(request->agent_id(), request->session_id(),
-                                        request->conversation_log(), timestamp);
+                                        request->conversation_log(), timestamp,
+                                        request->has_summary()
+                                            ? std::optional<std::string>(request->summary())
+                                            : std::nullopt);
   if (!st.ok()) {
     response->set_status(StoreLogResponse::STATUS_INTERNAL_ERROR);
     response->set_error_message(std::string(st.message()));
@@ -114,6 +119,66 @@ grpc::Status AgentLogServiceImpl::QueryLogs(grpc::ServerContext* context,
             << " records=" << result.records.size();
 
   return grpc::Status::OK;
+}
+
+absl::StatusOr<std::string> AgentLogServiceImpl::RenderStatuszHtml() const {
+  auto* metadata = engine_->GetMetadataStoreForTest();
+  if (metadata == nullptr) {
+    return absl::FailedPreconditionError("metadata store unavailable");
+  }
+  auto snapshot_or = metadata->GetStatuszSnapshot();
+  if (!snapshot_or.ok()) {
+    return snapshot_or.status();
+  }
+
+  const StatuszSnapshot& snapshot = *snapshot_or;
+  const absl::Time now = absl::Now();
+  const std::string ingestion_elapsed =
+      snapshot.last_ingestion_run.has_value()
+          ? absl::StrCat(absl::ToInt64Seconds(now - *snapshot.last_ingestion_run), "s")
+          : "N/A";
+  const std::string compaction_elapsed =
+      snapshot.last_compaction_run.has_value()
+          ? absl::StrCat(absl::ToInt64Seconds(now - *snapshot.last_compaction_run), "s")
+          : "N/A";
+
+  std::string html;
+  absl::StrAppend(&html,
+                  "<!doctype html><html><head><meta charset='utf-8'>"
+                  "<title>kalki statusz</title>"
+                  "<style>body{font-family:Arial,sans-serif;font-size:13px;padding:10px;}"
+                  "h1{font-size:16px;margin:0 0 8px 0;}h2{font-size:14px;margin:10px 0 6px 0;}"
+                  "table{border-collapse:collapse;}th,td{border:1px solid #ddd;padding:3px 7px;}"
+                  "</style></head><body><h1>kalki /statusz</h1>");
+
+  absl::StrAppend(&html, "<div>Total number of records ingested: ", snapshot.total_records_ingested,
+                  "</div>");
+  absl::StrAppend(&html, "<div>Records in WAL: ", snapshot.wal_record_count, "</div>");
+  absl::StrAppend(&html,
+                  "<div>Number of records in fresh block: ", snapshot.fresh_block_record_count,
+                  "</div>");
+
+  absl::StrAppend(&html,
+                  "<h2>Baked blocks</h2><table><thead><tr><th>Block ID</th>"
+                  "<th>Record count</th></tr></thead><tbody>");
+  for (const auto& block : snapshot.baked_blocks) {
+    absl::StrAppend(&html, "<tr><td>", block.block_id, "</td><td>", block.record_count,
+                    "</td></tr>");
+  }
+  if (snapshot.baked_blocks.empty()) {
+    absl::StrAppend(&html, "<tr><td colspan='2'>No baked blocks</td></tr>");
+  }
+  absl::StrAppend(&html, "</tbody></table>");
+
+  absl::StrAppend(&html, "<h2>Background jobs</h2>");
+  absl::StrAppend(&html,
+                  "<div>Time elapsed in seconds since last ingestion run: ", ingestion_elapsed,
+                  "</div>");
+  absl::StrAppend(&html,
+                  "<div>Time elapsed in seconds since last compaction run: ", compaction_elapsed,
+                  "</div>");
+  absl::StrAppend(&html, "</body></html>");
+  return html;
 }
 
 }  // namespace kalki

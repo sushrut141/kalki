@@ -113,12 +113,16 @@ absl::Status LocalEmbeddingClient::InitializeLocked() {
     return absl::InternalError("failed to determine embedding dimension from llama model");
   }
 
-  use_encoder_ = llama_model_has_encoder(model_);
+  const bool has_encoder = llama_model_has_encoder(model_);
+  const bool has_decoder = llama_model_has_decoder(model_);
+  use_encoder_ = has_encoder || !has_decoder;
   initialized_ = true;
 
   LOG(INFO) << "component=embedding event=model_loaded model_id=all-minilm:v2 path=" << model_path_
             << " dims=" << embedding_dims_ << " threads=" << thread_count_
-            << " encoder=" << (use_encoder_ ? "true" : "false");
+            << " encoder=" << (use_encoder_ ? "true" : "false")
+            << " has_encoder=" << (has_encoder ? "true" : "false")
+            << " has_decoder=" << (has_decoder ? "true" : "false");
   return absl::OkStatus();
 }
 

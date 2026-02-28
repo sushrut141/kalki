@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -17,7 +18,6 @@ namespace kalki {
 
 class WalStore;
 class MetadataStore;
-class LlmClient;
 class EmbeddingClient;
 class IngestionWorker;
 class CompactionWorker;
@@ -26,16 +26,15 @@ class QueryCoordinator;
 class DatabaseEngine {
  public:
   explicit DatabaseEngine(DatabaseConfig config);
-  DatabaseEngine(DatabaseConfig config, std::unique_ptr<LlmClient> llm_client);
-  DatabaseEngine(DatabaseConfig config, std::unique_ptr<LlmClient> llm_client,
-                 std::unique_ptr<EmbeddingClient> embedding_client);
+  DatabaseEngine(DatabaseConfig config, std::unique_ptr<EmbeddingClient> embedding_client);
   ~DatabaseEngine();
 
   absl::Status Initialize();
   void Shutdown();
 
   absl::Status AppendConversation(const std::string& agent_id, const std::string& session_id,
-                                  const std::string& conversation_log, absl::Time timestamp);
+                                  const std::string& conversation_log, absl::Time timestamp,
+                                  std::optional<std::string> summary = std::nullopt);
 
   absl::StatusOr<QueryExecutionResult> QueryLogs(const std::string& query,
                                                  const QueryFilter& filter);
@@ -55,7 +54,6 @@ class DatabaseEngine {
 
   std::unique_ptr<WalStore> wal_store_;
   std::unique_ptr<MetadataStore> metadata_store_;
-  std::unique_ptr<LlmClient> llm_client_;
   std::unique_ptr<EmbeddingClient> embedding_client_;
   std::unique_ptr<IngestionWorker> ingestion_worker_;
   std::unique_ptr<CompactionWorker> compaction_worker_;

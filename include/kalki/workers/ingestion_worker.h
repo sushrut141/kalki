@@ -12,7 +12,6 @@
 #include "kalki/common/task_queue.h"
 #include "kalki/common/types.h"
 #include "kalki/llm/embedding_client.h"
-#include "kalki/llm/llm_client.h"
 #include "kalki/metadata/metadata_store.h"
 #include "kalki/storage/fresh_block.h"
 #include "kalki/storage/wal.h"
@@ -22,8 +21,7 @@ namespace kalki {
 class IngestionWorker {
  public:
   IngestionWorker(const DatabaseConfig& config, WalStore* wal_store, MetadataStore* metadata_store,
-                  LlmClient* llm_client, EmbeddingClient* embedding_client,
-                  TaskQueue<CompactionTask>* compaction_queue);
+                  EmbeddingClient* embedding_client, TaskQueue<CompactionTask>* compaction_queue);
 
   absl::Status RunOnce();
 
@@ -35,7 +33,6 @@ class IngestionWorker {
   DatabaseConfig config_;
   WalStore* wal_store_;
   MetadataStore* metadata_store_;
-  LlmClient* llm_client_;
   EmbeddingClient* embedding_client_;
   TaskQueue<CompactionTask>* compaction_queue_;
 

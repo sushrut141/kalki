@@ -14,9 +14,8 @@ struct DatabaseConfig {
   std::string fresh_block_dir;
   std::string baked_block_dir;
   std::string grpc_listen_address;
+  std::string statusz_listen_address;
 
-  std::string llm_api_key;
-  std::string llm_model;
   std::string embedding_model_path;
   int embedding_threads = 2;
 
@@ -28,8 +27,6 @@ struct DatabaseConfig {
   double similarity_threshold = 0.2;
   int query_timeout_ms = 250;
   int worker_timeout_ms = 50;
-
-  size_t summary_chunk_bytes = 2048;
 
   absl::Duration ingestion_poll_interval = absl::Milliseconds(50);
   absl::Duration compaction_poll_interval = absl::Milliseconds(100);

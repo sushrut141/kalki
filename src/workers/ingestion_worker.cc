@@ -24,13 +24,11 @@ int64_t ToMicros(const google::protobuf::Timestamp& ts) {
 }  // namespace
 
 IngestionWorker::IngestionWorker(const DatabaseConfig& config, WalStore* wal_store,
-                                 MetadataStore* metadata_store, LlmClient* llm_client,
-                                 EmbeddingClient* embedding_client,
+                                 MetadataStore* metadata_store, EmbeddingClient* embedding_client,
                                  TaskQueue<CompactionTask>* compaction_queue)
     : config_(config),
       wal_store_(wal_store),
       metadata_store_(metadata_store),
-      llm_client_(llm_client),
       embedding_client_(embedding_client),
       compaction_queue_(compaction_queue) {}
 
@@ -180,41 +178,38 @@ absl::Status IngestionWorker::RunOnce() {
     DLOG(INFO) << "component=ingestion event=wal_record_loaded offset=" << envelope.start_offset
                << " agent_id=" << wal_record.agent_id();
 
-    auto summaries_or = llm_client_->SummarizeConversation(wal_record.conversation_log());
-    if (!summaries_or.ok()) {
-      return summaries_or.status();
+    ProcessedRecord processed;
+    processed.set_agent_id(wal_record.agent_id());
+    processed.set_session_id(wal_record.session_id());
+    *processed.mutable_timestamp() = wal_record.timestamp();
+    processed.set_raw_conversation_log(wal_record.conversation_log());
+
+    std::string embedding_text = wal_record.conversation_log();
+    if (wal_record.has_summary() && !wal_record.summary().empty()) {
+      embedding_text = wal_record.summary();
+    }
+    auto embedding_or = embedding_client_->EmbedText(embedding_text);
+    if (!embedding_or.ok()) {
+      return embedding_or.status();
+    }
+    for (float v : *embedding_or) {
+      processed.add_summary_embedding(v);
     }
 
-    for (const auto& summary : *summaries_or) {
-      ProcessedRecord processed;
-      processed.set_agent_id(wal_record.agent_id());
-      processed.set_session_id(wal_record.session_id());
-      *processed.mutable_timestamp() = wal_record.timestamp();
-      processed.set_raw_conversation_log(wal_record.conversation_log());
-      processed.set_summary(summary);
-      auto embedding_or = embedding_client_->EmbedText(summary);
-      if (!embedding_or.ok()) {
-        return embedding_or.status();
-      }
-      for (float v : *embedding_or) {
-        processed.add_summary_embedding(v);
-      }
+    CHECK(active_writer_open_) << "ingestion active writer is not initialized for block id="
+                               << active_block_id_;
+    status = active_writer_.Append(processed);
+    CHECK(status.ok()) << "ingestion failed to append processed record to fresh block id="
+                       << active_block_id_ << " status=" << status;
 
-      CHECK(active_writer_open_) << "ingestion active writer is not initialized for block id="
-                                 << active_block_id_;
-      status = active_writer_.Append(processed);
-      CHECK(status.ok()) << "ingestion failed to append processed record to fresh block id="
-                         << active_block_id_ << " status=" << status;
+    const int64_t ts_micros = ToMicros(wal_record.timestamp());
+    active_min_ts_micros_ = std::min(active_min_ts_micros_, ts_micros);
+    active_max_ts_micros_ = std::max(active_max_ts_micros_, ts_micros);
+    ++active_record_count_;
 
-      const int64_t ts_micros = ToMicros(wal_record.timestamp());
-      active_min_ts_micros_ = std::min(active_min_ts_micros_, ts_micros);
-      active_max_ts_micros_ = std::max(active_max_ts_micros_, ts_micros);
-      ++active_record_count_;
-
-      if (active_record_count_ >= config_.max_records_per_fresh_block) {
-        status = RotateFreshBlock();
-        CHECK(status.ok()) << "ingestion failed rotating fresh block status=" << status;
-      }
+    if (active_record_count_ >= config_.max_records_per_fresh_block) {
+      status = RotateFreshBlock();
+      CHECK(status.ok()) << "ingestion failed rotating fresh block status=" << status;
     }
     latest_offset = envelope.next_offset;
   }
@@ -232,6 +227,9 @@ absl::Status IngestionWorker::RunOnce() {
 
   status = MaybeTrimWal(latest_offset, *wal_count_or);
   CHECK(status.ok()) << "ingestion failed in wal trim check status=" << status;
+
+  status = metadata_store_->SetLastIngestionRun(absl::Now());
+  CHECK(status.ok()) << "ingestion failed to update last ingestion run timestamp status=" << status;
 
   LOG(INFO) << "component=ingestion event=processed_batch records=" << batch_or->size();
   DLOG(INFO) << "component=ingestion event=active_block_state block_id=" << active_block_id_
