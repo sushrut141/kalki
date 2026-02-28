@@ -42,8 +42,9 @@ def main() -> int:
                 )
                 break
 
-            agent_id = f"{args.agent_prefix}-{random.randint(1, 3)}"
-            session_id = f"{args.session_prefix}-{random.randint(1, 8)}"
+            sequence_id = sent + 1
+            agent_id = f"{args.agent_prefix}-{sequence_id}"
+            session_id = f"{args.session_prefix}-{sequence_id}"
             conversation_log = (
                 """Automated sandbox writer: collecting CI diagnostics and build history. "
                 **Kalki** is a purpose-built database for the high-concurrency "Execution Era" of autonomous agents.
@@ -68,8 +69,19 @@ def main() -> int:
                 )
                 if response.status != 0:
                     failures += 1
-            except grpc.RpcError:
+                    if failures <= 10 or failures % 50 == 0:
+                        print(
+                            f"store_log non-OK status={response.status} "
+                            f"error='{response.error_message}'",
+                            flush=True,
+                        )
+            except grpc.RpcError as exc:
                 failures += 1
+                if failures <= 10 or failures % 50 == 0:
+                    print(
+                        f"store_log rpc error code={exc.code()} details={exc.details()}",
+                        flush=True,
+                    )
 
             sent += 1
             if sent % 100 == 0:

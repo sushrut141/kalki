@@ -68,7 +68,27 @@ trap cleanup EXIT INT TERM
   >"${LOG_DIR}/kalki.log" 2>&1 &
 KALKI_PID=$!
 
-sleep 1
+SERVER_READY=0
+for _ in $(seq 1 80); do
+  if grep -q "component=server event=started addr=${KALKI_GRPC_ADDR}" "${LOG_DIR}/kalki.log"; then
+    SERVER_READY=1
+    break
+  fi
+  if ! kill -0 "${KALKI_PID}" 2>/dev/null; then
+    echo "error: kalkid exited before becoming ready"
+    echo "last 80 lines from ${LOG_DIR}/kalki.log:"
+    tail -n 80 "${LOG_DIR}/kalki.log" || true
+    exit 1
+  fi
+  sleep 0.25
+done
+
+if [[ "${SERVER_READY}" -ne 1 ]]; then
+  echo "error: kalkid did not become ready on ${KALKI_GRPC_ADDR}"
+  echo "last 80 lines from ${LOG_DIR}/kalki.log:"
+  tail -n 80 "${LOG_DIR}/kalki.log" || true
+  exit 1
+fi
 
 KALKI_GRPC_TARGET="${KALKI_GRPC_ADDR}" \
   uvicorn --app-dir "${ROOT_DIR}" sandbox.app:app --host "${SANDBOX_HTTP_ADDR%:*}" --port "${SANDBOX_HTTP_ADDR##*:}" \

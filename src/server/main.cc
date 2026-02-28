@@ -27,8 +27,9 @@ int main(int argc, char** argv) {
   kalki::StatuszHttpServer statusz_server(config.statusz_listen_address, &service);
   auto statusz_start = statusz_server.Start();
   if (!statusz_start.ok()) {
-    LOG(ERROR) << "component=server event=statusz_start_failed addr="
+    LOG(ERROR) << "component=server event=statusz_start_failed_fatal addr="
                << config.statusz_listen_address << " status=" << statusz_start;
+    engine.Shutdown();
     return 1;
   }
 

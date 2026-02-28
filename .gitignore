@@ -5,3 +5,4 @@ sandbox/.sandbox_data/
 sandbox/__pycache__/
 sandbox/generated/__pycache__/
 sandbox/logs/
+sandbox/generated
