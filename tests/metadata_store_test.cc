@@ -29,8 +29,6 @@ kalki::DatabaseConfig BuildMetadataStoreTestConfig(const std::string& base_dir) 
   cfg.fresh_block_dir = base_dir + "/blocks/fresh";
   cfg.baked_block_dir = base_dir + "/blocks/baked";
   cfg.grpc_listen_address = "127.0.0.1:0";
-  cfg.llm_api_key = "unused";
-  cfg.llm_model = "unused";
   cfg.max_records_per_fresh_block = 10;
   cfg.wal_trim_threshold_records = 200;
   cfg.wal_read_batch_size = 512;
@@ -46,8 +44,7 @@ kalki::DatabaseConfig BuildMetadataStoreTestConfig(const std::string& base_dir) 
 TEST(MetadataStoreTest, BlocksAreFilteredByAgentIdInFindCandidateBakedBlocks) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildMetadataStoreTestConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
   const absl::Time base_time = absl::Now() - absl::Minutes(20);
@@ -85,8 +82,7 @@ TEST(MetadataStoreTest, BlocksAreFilteredByAgentIdInFindCandidateBakedBlocks) {
 TEST(MetadataStoreTest, BlocksAreFilteredBySessionIdInFindCandidateBakedBlocks) {
   const std::string base_dir = CreateTempDir();
   const kalki::DatabaseConfig config = BuildMetadataStoreTestConfig(base_dir);
-  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeLlmClient>(),
-                               std::make_unique<kalki::test::FakeEmbeddingClient>());
+  kalki::DatabaseEngine engine(config, std::make_unique<kalki::test::FakeEmbeddingClient>());
   const auto init_status = engine.Initialize();
   auto* metadata_store = engine.GetMetadataStoreForTest();
   const absl::Time base_time = absl::Now() - absl::Minutes(20);

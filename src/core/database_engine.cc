@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -11,7 +12,6 @@
 #include "absl/time/time.h"
 #include "kalki.pb.h"
 #include "kalki/llm/embedding_client.h"
-#include "kalki/llm/gemini_client.h"
 #include "kalki/llm/local_embedding_client.h"
 #include "kalki/metadata/metadata_store.h"
 #include "kalki/query/query_coordinator.h"
@@ -36,16 +36,10 @@ google::protobuf::Timestamp ToProtoTimestamp(absl::Time time) {
 DatabaseEngine::DatabaseEngine(DatabaseConfig config)
     : config_(std::move(config)), query_thread_pool_(config_.query_worker_threads) {}
 
-DatabaseEngine::DatabaseEngine(DatabaseConfig config, std::unique_ptr<LlmClient> llm_client)
-    : config_(std::move(config)),
-      query_thread_pool_(config_.query_worker_threads),
-      llm_client_(std::move(llm_client)) {}
-
-DatabaseEngine::DatabaseEngine(DatabaseConfig config, std::unique_ptr<LlmClient> llm_client,
+DatabaseEngine::DatabaseEngine(DatabaseConfig config,
                                std::unique_ptr<EmbeddingClient> embedding_client)
     : config_(std::move(config)),
       query_thread_pool_(config_.query_worker_threads),
-      llm_client_(std::move(llm_client)),
       embedding_client_(std::move(embedding_client)) {}
 
 DatabaseEngine::~DatabaseEngine() { Shutdown(); }
@@ -57,9 +51,6 @@ absl::Status DatabaseEngine::Initialize() {
 
   wal_store_ = std::make_unique<WalStore>(config_.wal_path);
   metadata_store_ = std::make_unique<MetadataStore>(config_.metadata_db_path);
-  if (!llm_client_) {
-    llm_client_ = std::make_unique<GeminiLlmClient>(config_.llm_api_key, config_.llm_model);
-  }
   if (!embedding_client_) {
     embedding_client_ = std::make_unique<LocalEmbeddingClient>(config_.embedding_model_path,
                                                                config_.embedding_threads);
@@ -78,9 +69,9 @@ absl::Status DatabaseEngine::Initialize() {
     return st;
   }
 
-  ingestion_worker_ = std::make_unique<IngestionWorker>(
-      config_, wal_store_.get(), metadata_store_.get(), llm_client_.get(), embedding_client_.get(),
-      &compaction_queue_);
+  ingestion_worker_ =
+      std::make_unique<IngestionWorker>(config_, wal_store_.get(), metadata_store_.get(),
+                                        embedding_client_.get(), &compaction_queue_);
   compaction_worker_ =
       std::make_unique<CompactionWorker>(config_, metadata_store_.get(), &compaction_queue_);
   query_coordinator_ = std::make_unique<QueryCoordinator>(
@@ -113,12 +104,16 @@ void DatabaseEngine::Shutdown() {
 absl::Status DatabaseEngine::AppendConversation(const std::string& agent_id,
                                                 const std::string& session_id,
                                                 const std::string& conversation_log,
-                                                absl::Time timestamp) {
+                                                absl::Time timestamp,
+                                                std::optional<std::string> summary) {
   WalRecord record;
   record.set_agent_id(agent_id);
   record.set_session_id(session_id);
   record.set_conversation_log(conversation_log);
   *record.mutable_timestamp() = ToProtoTimestamp(timestamp);
+  if (summary.has_value() && !summary->empty()) {
+    record.set_summary(*summary);
+  }
 
   std::string payload;
   if (!record.SerializeToString(&payload)) {
@@ -155,7 +150,6 @@ void DatabaseEngine::IngestionLoop() {
     if (!st.ok()) {
       LOG(ERROR) << "component=ingestion event=run_once_failed status=" << st;
     }
-    absl::SleepFor(config_.ingestion_poll_interval);
   }
 }
 

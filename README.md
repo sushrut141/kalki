@@ -17,27 +17,27 @@ Existing solutions (Standard RAG, Vector DBs, or Local Markdown files) force a t
  - The Decompression Tax: To retrieve one specific context, current databases often have to decompress entire data pages, killing throughput.
  - The Token Tax: Agents shouldn't have to read their entire history to find a single past decision.
 
-Kalki solves this by treating agent history like a Log-Structured Merge-Tree (LSM), 
-where the index is a high-signal summary and the raw data is retrieved only on demand.
+Kalki solves this by treating agent history like a Log-Structured Merge-Tree (LSM),
+where the index is embedding-driven and the raw data is retrieved only on demand.
 
 ## ✨ Key Features
 
 1. Tablet-Based Storage Architecture  
 Data is persisted in tablets with two sections:
-- Header: compressed summaries, metadata (`agent_id`, `session_id`, time range), and offsets.
+- Header: metadata (`agent_id`, `session_id`, time range), vector embeddings, and offsets.
 - Body: compressed raw conversation payloads.
 
 2. Semantic Predicate Pushdown  
-The query engine first filters blocks using metadata (time + bloom filters), then runs FAISS similarity over summaries.
+The query engine first filters blocks using metadata (time + bloom filters), then runs FAISS similarity over stored embeddings.
 
 3. O(1) Payload Retrieval  
 After finding matches in headers, Kalki uses byte offsets to fetch only matching raw payloads from block bodies.
 
-4. Background Compaction and Summarization  
-Writes are WAL append-first. Ingestion + compaction workers summarize and bake blocks asynchronously.
+4. Background Compaction
+Writes are WAL append-first. Ingestion + compaction workers bake blocks asynchronously.
 
-5. High Signal Retrieval Quality  
-Embeddings are built from summaries (not raw noisy logs), improving retrieval precision and reducing search noise.
+5. Flexible Retrieval Signal
+If caller supplies a summary, Kalki embeds the summary for retrieval. Otherwise, Kalki embeds the raw payload.
 
 ## 🚀 Performance Metrics
 Kalki is built in C++20 for raw hardware efficiency. These numbers represent raw throughput (StoreLog operations/second) on standard hardware.
@@ -150,7 +150,7 @@ Install llama.cpp from source if no distro package is available (same steps as U
 
 ### Local Embedding Model
 
-Kalki stores summary embeddings once at ingestion/compaction time and reuses them for queries.
+Kalki stores record embeddings once at ingestion/compaction time and reuses them for queries.
 Only the incoming query is embedded at query time.
 
 Recommended small local model:
@@ -183,8 +183,13 @@ Default config in Kalki:
   --fresh_block_dir=./data/blocks/fresh \
   --baked_block_dir=./data/blocks/baked \
   --grpc_listen_address=0.0.0.0:8080 \
-  --llm_api_key="YOUR_API_KEY" \
-  --llm_model="gemini-1.5-flash"
+  --statusz_listen_address=0.0.0.0:8081
+```
+
+Status page:
+
+```bash
+curl -s http://127.0.0.1:8081/statusz
 ```
 
 ## Project layout
@@ -194,7 +199,7 @@ Default config in Kalki:
 - `src/common`: config, logging, thread-pool
 - `src/storage`: WAL, bloom filters, fresh/baked IO, compression
 - `src/metadata`: SQLite metadata store
-- `src/llm`: LLM abstraction + Gemini implementation
+- `src/llm`: embedding clients
 - `src/workers`: ingestion and compaction workers
 - `src/query`: similarity + coordinator
 - `src/core`: `DatabaseEngine` orchestration

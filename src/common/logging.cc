@@ -3,13 +3,19 @@
 #include <string>
 #include <vector>
 
+#include "absl/log/globals.h"
 #include "absl/log/initialize.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 
 namespace kalki {
 
-void InitializeLogging() { absl::InitializeLog(); }
+void InitializeLogging() {
+  absl::InitializeLog();
+  // Keep sandbox/server logs visible by default with Abseil logging.
+  absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
+  absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfo);
+}
 
 std::string FormatEvent(const std::string& component, const std::string& event,
                         std::initializer_list<std::pair<std::string, std::string>> fields) {

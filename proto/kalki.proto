@@ -9,6 +9,7 @@ message StoreLogRequest {
   string session_id = 2;
   string conversation_log = 3;
   google.protobuf.Timestamp timestamp = 4;
+  optional string summary = 5;
 }
 
 message StoreLogResponse {
@@ -58,6 +59,7 @@ message WalRecord {
   string session_id = 2;
   google.protobuf.Timestamp timestamp = 3;
   string conversation_log = 4;
+  optional string summary = 5;
 }
 
 message ProcessedRecord {
@@ -65,18 +67,16 @@ message ProcessedRecord {
   string session_id = 2;
   google.protobuf.Timestamp timestamp = 3;
   string raw_conversation_log = 4;
-  string summary = 5;
-  repeated float summary_embedding = 6;
+  repeated float summary_embedding = 5;
 }
 
 message BakedHeaderEntry {
   int64 timestamp_unix_micros = 1;
   string agent_id = 2;
   string session_id = 3;
-  string summary = 4;
-  uint64 data_offset = 5;
-  uint32 data_size = 6;
-  repeated float summary_embedding = 7;
+  uint64 data_offset = 4;
+  uint32 data_size = 5;
+  repeated float summary_embedding = 6;
 }
 
 message BakedHeader {

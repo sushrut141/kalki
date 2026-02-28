@@ -19,7 +19,6 @@
 #include "kalki/api/agent_log_service.h"
 #include "kalki/common/config.h"
 #include "kalki/core/database_engine.h"
-#include "kalki/llm/llm_client.h"
 #include "kalki/llm/local_embedding_client.h"
 
 namespace {
@@ -29,10 +28,6 @@ constexpr char kExpectedSessionId[] = "session_expected_fixed";
 constexpr char kMissingAgentId[] = "agent_missing_fixed";
 constexpr char kMissingSessionId[] = "session_missing_fixed";
 constexpr char kExpectedQuery[] = "Did the build pass?";
-constexpr char kSummaryText[] =
-    "Investigated an indexing bug causing stale reads in query coordinator.\n"
-    "Patched block candidate filtering and corrected fresh block locking order.\n"
-    "Verified fix with unit tests and end-to-end query validation.";
 constexpr char kRawConversationLog[] =
     "We started triaging a bug where the query endpoint returned stale data for some sessions. "
     "The first clue was a mismatch between candidate block counts and actual records. "
@@ -126,8 +121,6 @@ kalki::DatabaseConfig BuildConfig(const std::string& base_dir) {
   cfg.fresh_block_dir = base_dir + "/blocks/fresh";
   cfg.baked_block_dir = base_dir + "/blocks/baked";
   cfg.grpc_listen_address = "127.0.0.1:0";
-  cfg.llm_api_key = "unused";
-  cfg.llm_model = "unused";
   cfg.embedding_model_path = ModelPath();
   cfg.embedding_threads = 2;
   cfg.max_records_per_fresh_block = 500;
@@ -142,24 +135,13 @@ kalki::DatabaseConfig BuildConfig(const std::string& base_dir) {
   return cfg;
 }
 
-class DelayedFakeLlmClient final : public kalki::LlmClient {
- public:
-  absl::StatusOr<std::vector<std::string>> SummarizeConversation(
-      const std::string& conversation_log) override {
-    (void)conversation_log;
-    absl::SleepFor(absl::Milliseconds(200));
-    return std::vector<std::string>{kSummaryText};
-  }
-};
-
 class BenchmarkEnvironment {
  public:
   explicit BenchmarkEnvironment(const std::string& prefix)
       : base_dir_(CreateTempDir(prefix)),
         config_(BuildConfig(base_dir_)),
-        engine_(config_, std::make_unique<DelayedFakeLlmClient>(),
-                std::make_unique<kalki::LocalEmbeddingClient>(config_.embedding_model_path,
-                                                              config_.embedding_threads)),
+        engine_(config_, std::make_unique<kalki::LocalEmbeddingClient>(config_.embedding_model_path,
+                                                                       config_.embedding_threads)),
         service_(&engine_) {
     const auto init_status = engine_.Initialize();
     if (!init_status.ok()) {

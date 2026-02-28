@@ -47,6 +47,14 @@ CREATE TABLE IF NOT EXISTS wal_state (
 );
 INSERT OR IGNORE INTO wal_state(id, last_processed_offset, wal_record_count) VALUES (1, 0, 0);
 
+CREATE TABLE IF NOT EXISTS job_state (
+  id INTEGER PRIMARY KEY CHECK(id=1),
+  last_ingestion_run_micros INTEGER NOT NULL DEFAULT 0,
+  last_compaction_run_micros INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO job_state(id, last_ingestion_run_micros, last_compaction_run_micros)
+VALUES (1, 0, 0);
+
 CREATE TABLE IF NOT EXISTS blocks (
   block_id INTEGER PRIMARY KEY AUTOINCREMENT,
   block_path TEXT NOT NULL,
@@ -500,6 +508,127 @@ absl::StatusOr<std::vector<BlockMetadata>> MetadataStore::FindCandidateFreshBloc
   DLOG(INFO) << "component=metadata event=candidate_fresh_blocks count=" << blocks.size()
              << " min_bound=" << min_bound << " max_bound=" << max_bound;
   return blocks;
+}
+
+absl::StatusOr<StatuszSnapshot> MetadataStore::GetStatuszSnapshot() const {
+  absl::MutexLock lock(&mutex_);
+  if (auto status = EnsureOpen(); !status.ok()) {
+    return status;
+  }
+
+  StatuszSnapshot snapshot;
+
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db_, "SELECT wal_record_count FROM wal_state WHERE id=1", -1, &stmt,
+                         nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing wal count statusz query");
+  }
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    snapshot.wal_record_count = sqlite3_column_int64(stmt, 0);
+  }
+  sqlite3_finalize(stmt);
+
+  stmt = nullptr;
+  const char* total_sql =
+      "SELECT COALESCE(SUM(record_count), 0) FROM blocks "
+      "WHERE (block_type='BAKED' AND state='READY') "
+      "OR (block_type='FRESH' AND state IN ('ACTIVE', 'SEALED'))";
+  if (sqlite3_prepare_v2(db_, total_sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing total records statusz query");
+  }
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    snapshot.total_records_ingested = sqlite3_column_int64(stmt, 0);
+  }
+  sqlite3_finalize(stmt);
+
+  stmt = nullptr;
+  const char* fresh_sql =
+      "SELECT record_count FROM blocks "
+      "WHERE block_type='FRESH' AND state='ACTIVE' "
+      "ORDER BY block_id DESC LIMIT 1";
+  if (sqlite3_prepare_v2(db_, fresh_sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing fresh block count statusz query");
+  }
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    snapshot.fresh_block_record_count = sqlite3_column_int64(stmt, 0);
+  }
+  sqlite3_finalize(stmt);
+
+  stmt = nullptr;
+  const char* baked_sql =
+      "SELECT block_id, record_count FROM blocks "
+      "WHERE block_type='BAKED' AND state='READY' ORDER BY block_id ASC";
+  if (sqlite3_prepare_v2(db_, baked_sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing baked blocks statusz query");
+  }
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    BakedBlockStatus block;
+    block.block_id = sqlite3_column_int64(stmt, 0);
+    block.record_count = sqlite3_column_int64(stmt, 1);
+    snapshot.baked_blocks.push_back(block);
+  }
+  sqlite3_finalize(stmt);
+
+  stmt = nullptr;
+  const char* jobs_sql =
+      "SELECT last_ingestion_run_micros, last_compaction_run_micros "
+      "FROM job_state WHERE id=1";
+  if (sqlite3_prepare_v2(db_, jobs_sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing job state statusz query");
+  }
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    const int64_t ingestion_micros = sqlite3_column_int64(stmt, 0);
+    const int64_t compaction_micros = sqlite3_column_int64(stmt, 1);
+    if (ingestion_micros > 0) {
+      snapshot.last_ingestion_run = absl::FromUnixMicros(ingestion_micros);
+    }
+    if (compaction_micros > 0) {
+      snapshot.last_compaction_run = absl::FromUnixMicros(compaction_micros);
+    }
+  }
+  sqlite3_finalize(stmt);
+
+  return snapshot;
+}
+
+absl::Status MetadataStore::SetLastIngestionRun(absl::Time time) {
+  absl::MutexLock lock(&mutex_);
+  if (auto status = EnsureOpen(); !status.ok()) {
+    return status;
+  }
+
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "UPDATE job_state SET last_ingestion_run_micros=? WHERE id=1";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing ingestion timestamp update");
+  }
+  sqlite3_bind_int64(stmt, 1, absl::ToUnixMicros(time));
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return SqliteError(db_, "failed updating ingestion timestamp");
+  }
+  sqlite3_finalize(stmt);
+  return absl::OkStatus();
+}
+
+absl::Status MetadataStore::SetLastCompactionRun(absl::Time time) {
+  absl::MutexLock lock(&mutex_);
+  if (auto status = EnsureOpen(); !status.ok()) {
+    return status;
+  }
+
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "UPDATE job_state SET last_compaction_run_micros=? WHERE id=1";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return SqliteError(db_, "failed preparing compaction timestamp update");
+  }
+  sqlite3_bind_int64(stmt, 1, absl::ToUnixMicros(time));
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return SqliteError(db_, "failed updating compaction timestamp");
+  }
+  sqlite3_finalize(stmt);
+  return absl::OkStatus();
 }
 
 }  // namespace kalki
