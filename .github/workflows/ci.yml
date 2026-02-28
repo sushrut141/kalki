@@ -8,9 +8,14 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -26,19 +31,33 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            ca-certificates \
             cmake \
+            git-lfs \
             pkg-config \
             ninja-build \
             libabsl-dev \
             protobuf-compiler \
             libprotobuf-dev \
             libgrpc++-dev \
-            grpc-proto \
+            protobuf-compiler-grpc \
             libsqlite3-dev \
             libcurl4-openssl-dev \
             libzstd-dev \
-            libfaiss-dev \
-            libgtest-dev
+            libgtest-dev \
+            libopenblas-dev \
+            liblapack-dev
+
+      - name: Build FAISS
+        run: |
+          git clone --depth=1 https://github.com/facebookresearch/faiss.git /tmp/faiss
+          cmake -S /tmp/faiss -B /tmp/faiss/build \
+            -DBUILD_TESTING=OFF \
+            -DFAISS_ENABLE_GPU=OFF \
+            -DFAISS_ENABLE_PYTHON=OFF \
+            -DBUILD_SHARED_LIBS=ON
+          cmake --build /tmp/faiss/build -j"$(nproc)"
+          sudo cmake --install /tmp/faiss/build --prefix /usr/local
 
       - name: Build llama.cpp
         run: |
@@ -48,7 +67,7 @@ jobs:
           sudo cmake --install /tmp/llama.cpp/build --prefix /usr/local
 
       - name: Configure
-        run: cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/local
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
