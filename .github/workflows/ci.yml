@@ -75,6 +75,7 @@ jobs:
           cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build -DBUILD_SHARED_LIBS=ON
           cmake --build /tmp/llama.cpp/build -j"$(nproc)"
           sudo cmake --install /tmp/llama.cpp/build --prefix /usr/local
+          sudo ldconfig
 
       - name: Configure
         run: cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/local
@@ -83,4 +84,6 @@ jobs:
         run: cmake --build build -j"$(nproc)"
 
       - name: Test
+        env:
+          LD_LIBRARY_PATH: /usr/local/lib:/usr/local/lib64:${{ env.LD_LIBRARY_PATH }}
         run: ctest --test-dir build --output-on-failure
