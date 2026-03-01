@@ -1,4 +1,7 @@
-find_package(benchmark CONFIG REQUIRED)
+find_package(benchmark CONFIG QUIET)
+if (NOT benchmark_FOUND)
+  find_package(benchmark REQUIRED)
+endif ()
 
 add_executable(kalki_agent_log_service_benchmark
   agent_log_service_benchmark.cc

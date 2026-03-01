@@ -1,4 +1,7 @@
-find_package(GTest CONFIG REQUIRED)
+find_package(GTest CONFIG QUIET)
+if (NOT GTest_FOUND)
+  find_package(GTest REQUIRED)
+endif ()
 
 # Disabled temporarily: relies on external Gemini network/API availability.
 # add_executable(kalki_gemini_client_test gemini_client_test.cc)
