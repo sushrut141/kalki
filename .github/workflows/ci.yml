@@ -36,7 +36,6 @@ jobs:
             git-lfs \
             pkg-config \
             ninja-build \
-            libabsl-dev \
             protobuf-compiler \
             libprotobuf-dev \
             libgrpc++-dev \
@@ -47,6 +46,15 @@ jobs:
             libgtest-dev \
             libopenblas-dev \
             liblapack-dev
+
+      - name: Build Abseil
+        run: |
+          git clone --depth=1 https://github.com/abseil/abseil-cpp.git /tmp/abseil-cpp
+          cmake -S /tmp/abseil-cpp -B /tmp/abseil-cpp/build \
+            -DABSL_BUILD_TESTING=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/abseil-cpp/build -j"$(nproc)"
+          sudo cmake --install /tmp/abseil-cpp/build --prefix /usr/local
 
       - name: Build FAISS
         run: |
