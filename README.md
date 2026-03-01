@@ -1,5 +1,8 @@
 # Kalki: The Ultra-High Throughput Semantic WAL for Agents
 
+[![Build](https://github.com/sushrut141/kalki/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sushrut141/kalki/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **Kalki** is a purpose-built database for the high-concurrency era of autonomous agents.
 Kalki provides single digit ms latencies for store retrieve operations for agent conversation
 logs at scale. It's built with agent orchestrators in mind that generate copius amount of data
